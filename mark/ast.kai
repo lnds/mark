@@ -1,0 +1,35 @@
+#[doc("""
+The document as a value: the intermediate form between source text and
+ANSI lines. Pure and effect-free — derived `Eq` and `Show` are what let
+the parser be tested by structural equality.
+""")]
+
+#[doc("""
+Content within a line. `Text` is the literal, already stripped of its
+markup. The block phase produces only `Text`; the inline scanner
+replaces those nodes with the tree of emphasis, code and links.
+""")]
+#[derive(Eq, Show)]
+pub type Inline =
+    Text(String)
+  | Emph([Inline])
+  | Strong([Inline])
+  | CodeSpan(String)
+  | Link([Inline], String)
+
+#[doc("""
+A top-level block. `Code` carries the fence language (empty when none
+was declared) and its raw lines, never reinterpreted. `Bullets` and
+`Ordered` hold each item as a list of blocks, which is what allows
+paragraphs and sublists to nest inside an item. `Ordered` remembers the
+number the list started at.
+""")]
+#[derive(Eq, Show)]
+pub type Block =
+    Heading(Int, [Inline])
+  | Para([Inline])
+  | Code(String, [String])
+  | Quote([Block])
+  | Bullets([[Block]])
+  | Ordered(Int, [[Block]])
+  | Rule

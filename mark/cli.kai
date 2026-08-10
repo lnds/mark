@@ -1,0 +1,119 @@
+#[doc("""
+Reading the command line: a pure function from `[String]` to `Opts`,
+touching no environment. `main.kai` hands it `args.argv()` and resolves
+afterwards whatever depends on the terminal (real width, colour).
+""")]
+
+import core.string as string
+
+pub const VERSION : String = "0.1.0"
+
+#[doc("Where the document comes from, already resolved from the arguments.")]
+#[derive(Eq, Show)]
+pub type Source =
+    FromFile(String)
+  | FromStdin
+  | ShowHelp
+  | ShowVersion
+  | Invalid(String)
+
+#[doc("""
+The whole invocation. `width == 0` and `style == "auto"` mean "decide
+this by looking at the terminal": the CLI does not resolve what depends
+on the environment, it only records that it was left unset.
+""")]
+pub type Opts = {
+  source: Source,
+  width: Int,
+  style: String,
+  color: String,
+  pager: String,
+}
+
+fn defaults() : Opts =
+  Opts { source: ShowHelp, width: 0, style: "auto", color: "auto", pager: "auto" }
+
+pub fn parse_args(argv: [String]) : Opts = match argv {
+  [] -> defaults()
+  _  -> walk(argv, Opts { ...defaults(), source: FromStdin })
+}
+
+# The first bare argument fixes the source and later ones are ignored,
+# as glow does. A bad flag propagates and stops the walk.
+fn walk(argv: [String], o: Opts) : Opts = match o.source {
+  Invalid(_) -> o
+  _ -> match argv {
+    [] -> o
+    ["-h", ...t]        -> walk(t, Opts { ...o, source: ShowHelp })
+    ["--help", ...t]    -> walk(t, Opts { ...o, source: ShowHelp })
+    ["-v", ...t]        -> walk(t, Opts { ...o, source: ShowVersion })
+    ["--version", ...t] -> walk(t, Opts { ...o, source: ShowVersion })
+    ["-", ...t]         -> walk(t, Opts { ...o, source: FromStdin })
+
+    ["-w", n, ...t]      -> walk(t, with_width(o, n))
+    ["--width", n, ...t] -> walk(t, with_width(o, n))
+    ["-s", s, ...t]      -> walk(t, with_style(o, s))
+    ["--style", s, ...t] -> walk(t, with_style(o, s))
+    ["--color", c, ...t] -> walk(t, with_color(o, c))
+
+    ["-p", ...t]         -> walk(t, Opts { ...o, pager: "always" })
+    ["--pager", ...t]    -> walk(t, Opts { ...o, pager: "always" })
+    ["-P", ...t]         -> walk(t, Opts { ...o, pager: "never" })
+    ["--no-pager", ...t] -> walk(t, Opts { ...o, pager: "never" })
+
+    [a, ...t] ->
+      if string.starts_with(a, "-") and a != "-" {
+        Opts { ...o, source: Invalid("unknown option: #{a}") }
+      } else {
+        walk(t, first_file(o, a))
+      }
+  }
+}
+
+fn first_file(o: Opts, path: String) : Opts = match o.source {
+  FromStdin -> Opts { ...o, source: FromFile(path) }
+  _         -> o
+}
+
+fn with_width(o: Opts, n: String) : Opts = match string.to_int(n) {
+  Some(w) ->
+    if w > 0 { Opts { ...o, width: w } }
+    else { Opts { ...o, source: Invalid("width must be positive: #{n}") } }
+  None -> Opts { ...o, source: Invalid("width is not a number: #{n}") }
+}
+
+fn with_style(o: Opts, s: String) : Opts =
+  if s == "dark" or s == "light" or s == "auto" {
+    Opts { ...o, style: s }
+  } else {
+    Opts { ...o, source: Invalid("unknown style: #{s} (dark|light|auto)") }
+  }
+
+fn with_color(o: Opts, c: String) : Opts =
+  if c == "auto" or c == "always" or c == "never" {
+    Opts { ...o, color: c }
+  } else {
+    Opts { ...o, source: Invalid("unknown colour mode: #{c} (auto|always|never)") }
+  }
+
+# A triple-quoted literal keeps the newline that follows the opening
+# quotes, so the text starts glued to it to avoid a leading blank line.
+pub fn help_text() : String = """mark #{VERSION} — a markdown viewer for the terminal
+
+usage:
+  mark <file.md>         render a file
+  mark -                 render whatever arrives on stdin
+  mark -h | --help       this help
+  mark -v | --version    the version
+
+options:
+  -w, --width <n>        output width (default: the terminal's, capped at 80)
+  -s, --style <style>    dark | light | auto
+      --color <when>     auto | always | never (NO_COLOR also disables it)
+  -p, --pager            page even when the text fits on screen
+  -P, --no-pager         dump everything at once, without paging
+
+in the pager:
+  j/k, up/down           one line              space/b   one page
+  d/u                    half a page           g/G       start/end
+  q, Esc                 quit"""

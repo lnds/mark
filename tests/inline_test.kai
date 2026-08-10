@@ -1,0 +1,51 @@
+import mark.inline
+import mark.ast
+
+test "plain text stays a single node" {
+  assert inline.scan("hello world") == [Text("hello world")]
+  assert inline.scan("") == []
+}
+
+test "emphasis, plain and strong" {
+  assert inline.scan("*x*") == [Emph([Text("x")])]
+  assert inline.scan("_x_") == [Emph([Text("x")])]
+  assert inline.scan("**x**") == [Strong([Text("x")])]
+  assert inline.scan("__x__") == [Strong([Text("x")])]
+  let mixed = inline.scan("a **b** c")
+  assert mixed == [Text("a "), Strong([Text("b")]), Text(" c")]
+}
+
+test "inline code: the content stays raw" {
+  assert inline.scan("`a*b*`") == [CodeSpan("a*b*")]
+  assert inline.scan("use `x` here") == [Text("use "), CodeSpan("x"), Text(" here")]
+}
+
+test "links: the label is rescanned, the destination is not" {
+  assert inline.scan("[t](u)") == [Link([Text("t")], "u")]
+  let emph = inline.scan("[*t*](http://a/b_c)")
+  assert emph == [Link([Emph([Text("t")])], "http://a/b_c")]
+}
+
+test "an unclosed delimiter degrades to text, losing no content" {
+  assert inline.scan("*abc") == [Text("*abc")]
+  assert inline.scan("`abc") == [Text("`abc")]
+  assert inline.scan("[abc") == [Text("[abc")]
+  assert inline.scan("[t]no destination") == [Text("[t]no destination")]
+}
+
+test "escapes turn a delimiter literal" {
+  assert inline.scan("\\*not\\*") == [Text("*not*")]
+  assert inline.scan("a \\_ b") == [Text("a _ b")]
+}
+
+test "false openings do not start emphasis" {
+  assert inline.scan("2 * 3 * 4") == [Text("2 * 3 * 4")]
+  assert inline.scan("snake_case_here") == [Text("snake_case_here")]
+}
+
+test "a node nests the others" {
+  let nested = inline.scan("**a `c`**")
+  assert nested == [Strong([Text("a "), CodeSpan("c")])]
+}
+
+fn main() : Int = 0

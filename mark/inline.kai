@@ -1,0 +1,138 @@
+#[doc("""
+Scanner for the content of a line: turns the text of a block into the
+`Inline` tree. Pure.
+
+The walk is codepoint by codepoint, gathering literal text into a
+buffer that is flushed as `Text` whenever a node opens. An unclosed
+delimiter is not an error: it degrades to literal text, so the scanner
+never loses content.
+
+Every accumulator here grows at the FRONT and is reversed once at the
+end. Appending with `acc ++ [x]` copies the whole accumulator on each
+step, which turns a scan over a line into quadratic work — on a long
+paragraph that is the difference between milliseconds and seconds.
+""")]
+
+import core.string as string
+import core.list as list
+import core.char as char
+import mark.ast
+
+#[doc("Turns the text of a line into its tree of inline nodes.")]
+pub fn scan(s: String) : [ast.Inline] = scan_chars(string.chars(s))
+
+# `go` builds its node list backwards; this is the only place that pays
+# for putting it back in order.
+fn scan_chars(cs: [Char]) : [ast.Inline] = list.reverse(go(cs, [], []))
+
+fn go(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] = match cs {
+  [] -> flush(buf, acc)
+
+  ['\\', e, ...t] ->
+    if escapable(e) { go(t, [e, ...buf], acc) } else { go(t, [e, '\\', ...buf], acc) }
+
+  ['*', '*', ...t] -> delimited(t, ['*', '*'], buf, acc, (xs) => Strong(xs))
+  ['_', '_', ...t] ->
+    if word_edge(buf) { delimited(t, ['_', '_'], buf, acc, (xs) => Strong(xs)) }
+    else { go(t, ['_', '_', ...buf], acc) }
+
+  ['*', ...t] -> delimited(t, ['*'], buf, acc, (xs) => Emph(xs))
+  ['_', ...t] ->
+    if word_edge(buf) { delimited(t, ['_'], buf, acc, (xs) => Emph(xs)) }
+    else { go(t, ['_', ...buf], acc) }
+
+  ['`', ...t] -> match take_raw(t, ['`'], []) {
+    Some((body, rest)) -> go(rest, [], [CodeSpan(string.from_chars(body)), ...flush(buf, acc)])
+    None               -> go(t, ['`', ...buf], acc)
+  }
+
+  ['[', ...t] -> take_link(t, buf, acc)
+
+  [c, ...t] -> go(t, [c, ...buf], acc)
+}
+
+# A node with a symmetric delimiter. With no valid close the delimiter
+# goes back into the buffer as text: ambiguity degrades, never discards.
+fn delimited(
+  cs: [Char],
+  close: [Char],
+  buf: [Char],
+  acc: [ast.Inline],
+  wrap: ([ast.Inline]) -> ast.Inline,
+) : [ast.Inline] = match take_until(cs, close, []) {
+  Some((body, rest)) ->
+    if tight(body) {
+      go(rest, [], [wrap(scan_chars(body)), ...flush(buf, acc)])
+    } else { reopen(cs, close, buf, acc) }
+  None -> reopen(cs, close, buf, acc)
+}
+
+# The delimiter did not open anything: it goes into the buffer as plain
+# text and the scan resumes just after it.
+fn reopen(cs: [Char], close: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
+  go(cs, list.reverse(close) ++ buf, acc)
+
+# `[text](destination)`: the label is rescanned, the destination is not.
+fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
+  match take_until(cs, [']'], []) {
+    None -> go(cs, ['[', ...buf], acc)
+    Some((label, after)) -> match after {
+      ['(', ...rest] -> match take_raw(rest, [')'], []) {
+        Some((dest, tail)) ->
+          go(tail, [], [Link(scan_chars(label), string.from_chars(dest)), ...flush(buf, acc)])
+        None -> go(cs, ['[', ...buf], acc)
+      }
+      _ -> go(cs, ['[', ...buf], acc)
+    }
+  }
+
+# Cuts at the first `close`, honouring escapes: `\*` does not close an
+# emphasis. Returns (content, what follows the delimiter).
+fn take_until(cs: [Char], close: [Char], acc: [Char]) : Option[([Char], [Char])] =
+  match cs {
+    [] -> None
+    ['\\', e, ...t] -> take_until(t, close, [e, '\\', ...acc])
+    [h, ...t] ->
+      if starts_with(cs, close) { Some((list.reverse(acc), list.drop(cs, close.length()))) }
+      else { take_until(t, close, [h, ...acc]) }
+  }
+
+# Like `take_until` but without interpreting escapes, for the spans
+# whose content is literal: code, and a link destination.
+fn take_raw(cs: [Char], close: [Char], acc: [Char]) : Option[([Char], [Char])] =
+  match cs {
+    [] -> None
+    [h, ...t] ->
+      if starts_with(cs, close) { Some((list.reverse(acc), list.drop(cs, close.length()))) }
+      else { take_raw(t, close, [h, ...acc]) }
+  }
+
+fn starts_with(cs: [Char], m: [Char]) : Bool = match m {
+  [] -> true
+  [x, ...xs] -> match cs {
+    []         -> false
+    [y, ...ys] -> y == x and starts_with(ys, xs)
+  }
+}
+
+# A span with whitespace against a delimiter is not emphasis: that is
+# what keeps `2 * 3 * 4` arithmetic rather than italics.
+fn tight(cs: [Char]) : Bool = match cs {
+  [h, ..._] -> h != ' ' and list.last(cs) != Some(' ')
+  []        -> false
+}
+
+# `_` only opens at a word boundary, so `snake_case` does not turn into
+# emphasis. `*` needs no such rule: it does not occur inside
+# identifiers. The buffer runs backwards, so its head is the character
+# just scanned.
+fn word_edge(buf: [Char]) : Bool = match list.head(buf) {
+  None    -> true
+  Some(c) -> not char.is_alnum(c)
+}
+
+fn escapable(c: Char) : Bool =
+  list.contains(['\\', '`', '*', '_', '[', ']', '(', ')', '#', '+', '-', '.', '!', '>', '~'], c)
+
+fn flush(buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
+  if buf.is_empty() { acc } else { [Text(string.from_chars(list.reverse(buf))), ...acc] }

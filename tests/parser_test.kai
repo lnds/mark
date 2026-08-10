@@ -1,0 +1,63 @@
+import mark.parser
+import mark.ast
+
+test "headings by level, with an optional closing run" {
+  assert parser.parse("# Hello") == [Heading(1, [Text("Hello")])]
+  assert parser.parse("### Three") == [Heading(3, [Text("Three")])]
+  assert parser.parse("## With a close ##") == [Heading(2, [Text("With a close")])]
+  assert parser.parse("####### Seven") == [Para([Text("####### Seven")])]
+  assert parser.parse("#hashtag") == [Para([Text("#hashtag")])]
+}
+
+test "paragraphs: adjacent lines join, a blank line cuts" {
+  assert parser.parse("one\ntwo") == [Para([Text("one two")])]
+  assert parser.parse("one\n\ntwo") == [Para([Text("one")]), Para([Text("two")])]
+}
+
+test "horizontal rule and its ambiguity with a bullet" {
+  assert parser.parse("---") == [Rule]
+  assert parser.parse("***") == [Rule]
+  assert parser.parse("- - -") == [Rule]
+  assert parser.parse("--") == [Para([Text("--")])]
+}
+
+test "code block: the body stays raw" {
+  let fenced = parser.parse("```kai\nlet x = 1\n# not a heading\n```")
+  assert fenced == [Code("kai", ["let x = 1", "# not a heading"])]
+  assert parser.parse("```\nno language\n```") == [Code("", ["no language"])]
+}
+
+test "an unclosed fence runs to the end of the document" {
+  assert parser.parse("```\nopen") == [Code("", ["open"])]
+}
+
+test "quotes, nested ones included" {
+  assert parser.parse("> hi") == [Quote([Para([Text("hi")])])]
+  assert parser.parse("> > inside") == [Quote([Quote([Para([Text("inside")])])])]
+}
+
+test "bullet and ordered lists" {
+  let bullets = parser.parse("- one\n- two")
+  assert bullets == [Bullets([[Para([Text("one")])], [Para([Text("two")])]])]
+  let ordered = parser.parse("1. one\n2. two")
+  assert ordered == [Ordered(1, [[Para([Text("one")])], [Para([Text("two")])]])]
+  assert parser.parse("3) three") == [Ordered(3, [[Para([Text("three")])]])]
+}
+
+test "an item takes an indented sublist" {
+  let nested = parser.parse("- one\n  - nested")
+  assert nested == [Bullets([[Para([Text("one")]), Bullets([[Para([Text("nested")])]])]])]
+}
+
+test "a list interrupts the preceding paragraph with no blank line" {
+  let mixed = parser.parse("text\n- item")
+  assert mixed == [Para([Text("text")]), Bullets([[Para([Text("item")])]])]
+}
+
+test "blocks carry their content already scanned into inline nodes" {
+  assert parser.parse("# A *title*") == [Heading(1, [Text("A "), Emph([Text("title")])])]
+  let quoted = parser.parse("> with `code`")
+  assert quoted == [Quote([Para([Text("with "), CodeSpan("code")])])]
+}
+
+fn main() : Int = 0

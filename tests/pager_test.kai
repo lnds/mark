@@ -1,0 +1,94 @@
+import mark.pager
+import core.list as list
+import core.string as string
+import terevaka.ui as ui
+
+fn doc(n: Int) : [String] = list.map(list.enumerate(list.repeat("x", n)), (p) => "L#{p.fst}")
+
+# 10 lines in a 5-row screen: 4 of body and one of status.
+fn m5() : pager.Model = pager.model(doc(10), 5, "doc.md")
+
+test "the window starts at the top and shows only what fits" {
+  assert pager.viewport(m5()) == ["L0", "L1", "L2", "L3"]
+}
+
+test "scrolling moves the window" {
+  assert pager.viewport(pager.scroll(m5(), 2)) == ["L2", "L3", "L4", "L5"]
+  let page = pager.scroll(m5(), 4)
+  assert pager.viewport(page) == ["L4", "L5", "L6", "L7"]
+}
+
+test "the window never leaves the document at either end" {
+  assert pager.scroll(m5(), 0 - 3).top == 0
+  # The ceiling leaves the last line at the foot, not mid-empty-screen.
+  assert pager.scroll(m5(), 999).top == 6
+  assert pager.viewport(pager.scroll(m5(), 999)) == ["L6", "L7", "L8", "L9"]
+}
+
+test "a document shorter than the screen is padded and does not move" {
+  let short = pager.model(["a", "b"], 5, "short.md")
+  assert pager.viewport(short) == ["a", "b", "", ""]
+  assert pager.scroll(short, 5).top == 0
+}
+
+test "the keys do what the help says" {
+  let m = m5()
+  assert pager.step(m, Printable('q')) == None
+  assert pager.step(m, Esc) == None
+  assert pager.step(m, Printable('j')) == Some(pager.scroll(m, 1))
+  assert pager.step(m, Down) == Some(pager.scroll(m, 1))
+  assert pager.step(m, Printable(' ')) == Some(pager.scroll(m, 4))
+  assert pager.step(m, Printable('G')) == Some(pager.scroll(m, 999))
+  assert pager.step(m, Printable('k')) == Some(m)
+  assert pager.step(m, Tick) == Some(m)
+}
+
+# A closed stdin arrives as a burst of `Unknown` with no `Tick`: without
+# this cut-off the loop would spin against the EOF forever.
+test "a burst of unreadable keys declares the input dead" {
+  assert blind_run(m5(), pager.blind_limit()) == None
+  assert blind_run(m5(), pager.blind_limit() - 1) != None
+}
+
+# A `Tick` proves the input is breathing and resets the count.
+test "a tick breaks the run of unreadable keys" {
+  let almost = blind_run(m5(), pager.blind_limit() - 1)
+  let revived = match almost { Some(m) -> pager.step(m, Tick); None -> None }
+  let after = match revived { Some(m) -> blind_run(m, 1); None -> None }
+  assert after != None
+}
+
+fn blind_run(m: pager.Model, n: Int) : Option[pager.Model] =
+  if n <= 0 { Some(m) } else { match pager.step(m, Unknown) {
+    Some(next) -> blind_run(next, n - 1)
+    None       -> None
+  } }
+
+# The terevaka frame paints from row 2, column 4: a frame using the full
+# height or width overflows, the terminal wraps, and the resulting
+# scroll shifts the whole frame.
+test "the frame leaves room for the frame margin" {
+  assert pager.body_rows(30) == 28
+  assert pager.body_rows(3) == 1
+  assert pager.body_rows(1) == 1
+  let m = pager.model(doc(100), pager.body_rows(30) + 1, "x.md")
+  assert pager.viewport(m).length() == 28
+  assert ui.visible_len(pager.status(m, 100 - pager.margin())) == 97
+}
+
+# The bar is measured in columns, not bytes: the ellipsis of a cut takes
+# one column and three bytes.
+test "the status bar occupies exactly the width given" {
+  assert ui.visible_len(pager.status(m5(), 40)) == 40
+  assert ui.visible_len(pager.status(m5(), 12)) == 12
+  assert ui.visible_len(pager.status(m5(), 100)) == 100
+}
+
+test "the keys show up only when there is room to spare" {
+  assert pager.status(m5(), 12) == "doc.md  4/1…"
+  let wide = pager.status(m5(), 100)
+  assert string.index_of(wide, "q quit") != None
+  assert string.index_of(pager.status(m5(), 40), "q quit") == None
+}
+
+fn main() : Int = 0

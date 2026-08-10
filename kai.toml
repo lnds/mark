@@ -1,0 +1,6 @@
+name = "mark"
+version = "0.1.0"
+entry = "main.kai"
+
+[dependencies]
+terevaka = { source = "github.com/kaikailang-org/terevaka", ref = "main" }

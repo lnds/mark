@@ -1,0 +1,49 @@
+import mark.cli
+
+test "no arguments means the help" {
+  assert cli.parse_args([]).source == ShowHelp
+}
+
+test "flags and a file" {
+  assert cli.parse_args(["-h"]).source == ShowHelp
+  assert cli.parse_args(["--version"]).source == ShowVersion
+  assert cli.parse_args(["-"]).source == FromStdin
+  assert cli.parse_args(["doc.md"]).source == FromFile("doc.md")
+}
+
+test "options and the file coexist, in any order" {
+  let a = cli.parse_args(["-w", "60", "doc.md"])
+  assert a.source == FromFile("doc.md")
+  assert a.width == 60
+  let b = cli.parse_args(["doc.md", "--style", "light", "--color", "never"])
+  assert b.source == FromFile("doc.md")
+  assert b.style == "light"
+  assert b.color == "never"
+}
+
+test "the pager can be forced either way" {
+  assert cli.parse_args(["-p", "doc.md"]).pager == "always"
+  assert cli.parse_args(["--no-pager", "doc.md"]).pager == "never"
+}
+
+test "what is left unset waits for the terminal" {
+  let d = cli.parse_args(["doc.md"])
+  assert d.width == 0
+  assert d.style == "auto"
+  assert d.color == "auto"
+  assert d.pager == "auto"
+}
+
+test "the first file wins; later ones are ignored" {
+  assert cli.parse_args(["one.md", "two.md"]).source == FromFile("one.md")
+}
+
+test "a bad argument becomes the error to report" {
+  assert cli.parse_args(["-z"]).source == Invalid("unknown option: -z")
+  assert cli.parse_args(["-w", "x"]).source == Invalid("width is not a number: x")
+  assert cli.parse_args(["-w", "0"]).source == Invalid("width must be positive: 0")
+  assert cli.parse_args(["-s", "blue"]).source ==
+    Invalid("unknown style: blue (dark|light|auto)")
+}
+
+fn main() : Int = 0

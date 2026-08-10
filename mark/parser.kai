@@ -1,0 +1,252 @@
+#[doc("""
+Block parser: from source text to `[Block]`. Pure and effect-free, so
+it can be tested by structural equality against the AST.
+
+The walk is line by line: each block shape is recognised by the prefix
+of its first line, consumes the lines belonging to it, and returns the
+rest. Containers (quote, list item) re-enter `blocks` with their lines
+already de-indented, so nesting falls out of the recursion instead of a
+special case per level.
+""")]
+
+import core.string as string
+import core.list as list
+import mark.ast
+import mark.inline
+
+# What a recogniser returns: the block, and the lines still unconsumed.
+type Parsed = (ast.Block, [String])
+
+#[doc("Parses a whole markdown document.")]
+pub fn parse(src: String) : [ast.Block] = blocks(string.lines(src))
+
+fn blocks(ls: [String]) : [ast.Block] = match ls {
+  [] -> []
+  [l, ..._] ->
+    if string.is_blank(l) {
+      blocks(list.drop(ls, 1))
+    } else {
+      let (block, rest) = block_at(ls)
+      [block, ...blocks(rest)]
+    }
+}
+
+# Precedence is the order of this list, not a chain of `else`: a
+# horizontal rule (`---`) reads as a list item (`- `) if tried later.
+# The paragraph closes the list by being the case that accepts anything.
+fn block_at(ls: [String]) : Parsed =
+  match list.find_map([rule_at, heading_at, code_at, quote_at, bullets_at, ordered_at],
+                      (recognise) => recognise(ls)) {
+    Some(parsed) -> parsed
+    None         -> take_para(ls, [])
+  }
+
+fn first_line(ls: [String]) : String = match list.head(ls) {
+  Some(l) -> l
+  None    -> ""
+}
+
+# ---- Horizontal rules ----
+
+fn rule_at(ls: [String]) : Option[Parsed] =
+  if is_rule(first_line(ls)) { Some((Rule, list.drop(ls, 1))) } else { None }
+
+# Three or more identical `-`, `*` or `_`, ignoring interleaved spaces.
+fn is_rule(l: String) : Bool = {
+  let cs = string.chars(string.trim(l)) |? ((c) => c != ' ')
+  match cs {
+    []        -> false
+    [h, ..._] -> (h == '-' or h == '*' or h == '_') and
+                 cs.length() >= 3 and
+                 list.all(cs, (c) => c == h)
+  }
+}
+
+# ---- Headings ----
+
+fn heading_at(ls: [String]) : Option[Parsed] = {
+  let l = first_line(ls)
+  heading_level(l).map((n) => (Heading(n, inline.scan(heading_text(l, n))), list.drop(ls, 1)))
+}
+
+# Level 1..6 from the leading `#`. A `#` glued to the text (`#hashtag`)
+# opens no heading.
+fn heading_level(l: String) : Option[Int] = {
+  let t = string.trim_left(l)
+  let n = count_prefix(string.chars(t), '#')
+  let body = string.slice(t, n, string.length(t) - n)
+  if n >= 1 and n <= 6 and (string.starts_with(body, " ") or string.is_empty(body)) {
+    Some(n)
+  } else { None }
+}
+
+# The heading text, without the opening `#` nor the optional closing
+# ones (`## Title ##`).
+fn heading_text(l: String, level: Int) : String = {
+  let t = string.trim_left(l)
+  let body = string.trim(string.slice(t, level, string.length(t) - level))
+  string.trim(drop_suffix_run(body, "#"))
+}
+
+# ---- Code blocks ----
+
+fn code_at(ls: [String]) : Option[Parsed] = {
+  let opener = first_line(ls)
+  fence_marker(opener).map((marker) => take_code(opener, marker, list.drop(ls, 1)))
+}
+
+# The opening fence marker, when the line opens one.
+fn fence_marker(l: String) : Option[String] = {
+  let t = string.trim_left(l)
+  if string.starts_with(t, "```") { Some("```") }
+  else if string.starts_with(t, "~~~") { Some("~~~") }
+  else { None }
+}
+
+# Consumes up to the closing fence. An unclosed block runs to the end of
+# the document: it is closed there rather than dropping the content.
+fn take_code(opener: String, marker: String, rest: [String]) : Parsed = {
+  let t = string.trim_left(opener)
+  let lang = string.trim(string.slice(t, marker.length(), t.length() - marker.length()))
+  let (body, tail) = list.span(rest, (l) => fence_marker(l) != Some(marker))
+  (Code(lang, body), list.drop(tail, 1))
+}
+
+# ---- Quotes ----
+
+fn quote_at(ls: [String]) : Option[Parsed] =
+  if is_quote(first_line(ls)) { Some(take_quote(ls)) } else { None }
+
+fn is_quote(l: String) : Bool = string.starts_with(string.trim(l), ">")
+
+fn take_quote(ls: [String]) : Parsed = {
+  let (quoted, rest) = list.span(ls, is_quote)
+  (Quote(blocks(quoted | strip_quote)), rest)
+}
+
+# Drops the `>` and the space that usually follows it.
+fn strip_quote(l: String) : String = {
+  let t = string.trim_left(l)
+  let body = string.slice(t, 1, t.length() - 1)
+  match string.drop_prefix(body, " ") {
+    Some(r) -> r
+    None    -> body
+  }
+}
+
+# ---- Lists ----
+
+fn bullets_at(ls: [String]) : Option[Parsed] =
+  bullet_marker(first_line(ls)).map((marker) => take_bullets(ls, []))
+
+fn ordered_at(ls: [String]) : Option[Parsed] =
+  ordered_start(first_line(ls)).map((n) => take_ordered(ls, n, []))
+
+# The bullet marker (`-`, `*` or `+` followed by a space).
+fn bullet_marker(l: String) : Option[String] = {
+  let t = string.trim_left(l)
+  if string.starts_with(t, "- ") { Some("-") }
+  else if string.starts_with(t, "* ") { Some("*") }
+  else if string.starts_with(t, "+ ") { Some("+") }
+  else { None }
+}
+
+# The number an ordered item opens with (`1. ` or `1) `).
+fn ordered_start(l: String) : Option[Int] = {
+  let t = string.trim_left(l)
+  let digits = count_digits(string.chars(t))
+  let after = string.slice(t, digits, t.length() - digits)
+  if digits > 0 and (string.starts_with(after, ". ") or string.starts_with(after, ") ")) {
+    string.to_int(string.slice(t, 0, digits))
+  } else { None }
+}
+
+# `acc` gathers items backwards and is reversed on the way out; the
+# append form would copy every item collected so far on each one.
+fn take_bullets(ls: [String], acc: [[ast.Block]]) : Parsed = {
+  let l = first_line(ls)
+  if bullet_marker(l) == None or is_rule(l) {
+    (Bullets(list.reverse(acc)), ls)
+  } else {
+    let (item, rest) = take_item(ls, marker_width(l, 2))
+    take_bullets(rest, [item, ...acc])
+  }
+}
+
+fn take_ordered(ls: [String], start: Int, acc: [[ast.Block]]) : Parsed = {
+  let l = first_line(ls)
+  if ordered_start(l) == None {
+    (Ordered(start, list.reverse(acc)), ls)
+  } else {
+    let width = marker_width(l, count_digits(string.chars(string.trim_left(l))) + 2)
+    let (item, rest) = take_item(ls, width)
+    take_ordered(rest, start, [item, ...acc])
+  }
+}
+
+# How many columns the marker occupies counting its indent, so an item's
+# continuation lines de-indent to the same column as its text.
+fn marker_width(l: String, mark_len: Int) : Int =
+  (l.length() - string.trim_left(l).length()) + mark_len
+
+# An item: its first line without the marker, plus the following
+# indented lines belonging to it, all reparsed as blocks.
+fn take_item(ls: [String], indent: Int) : ([ast.Block], [String]) = {
+  let l = first_line(ls)
+  let head = string.slice(l, indent, l.length() - indent)
+  let (body, rest) = take_continuation(list.drop(ls, 1), indent, [])
+  (blocks([head, ...body]), rest)
+}
+
+fn take_continuation(ls: [String], indent: Int, acc: [String]) : ([String], [String]) =
+  match ls {
+    [] -> (list.reverse(acc), [])
+    [h, ...t] ->
+      if string.is_blank(h) or not string.starts_with(h, string.repeat(" ", indent)) {
+        (list.reverse(acc), ls)
+      } else {
+        take_continuation(t, indent, [string.slice(h, indent, h.length() - indent), ...acc])
+      }
+  }
+
+# ---- Paragraphs ----
+
+# Runs to a blank line or the start of another block, which is what
+# allows a list to be written straight after a paragraph.
+fn take_para(ls: [String], acc: [String]) : Parsed = match ls {
+  [] -> (para_of(acc), [])
+  [h, ...t] ->
+    if acc.length() > 0 and (string.is_blank(h) or interrupts_para(h)) {
+      (para_of(acc), ls)
+    } else {
+      take_para(t, [string.trim(h), ...acc])
+    }
+}
+
+# The lines arrive backwards, joined by a space: a paragraph's newlines
+# are not breaks, the renderer decides where it wraps.
+fn para_of(acc: [String]) : ast.Block =
+  Para(inline.scan(string.join(list.reverse(acc), " ")))
+
+fn interrupts_para(l: String) : Bool =
+  is_rule(l) or is_quote(l) or heading_level(l) != None or
+  fence_marker(l) != None or bullet_marker(l) != None or
+  ordered_start(l) != None
+
+# ---- Character helpers ----
+
+fn count_prefix(cs: [Char], c: Char) : Int = match cs {
+  []        -> 0
+  [h, ...t] -> if h == c { 1 + count_prefix(t, c) } else { 0 }
+}
+
+fn count_digits(cs: [Char]) : Int = match cs {
+  []        -> 0
+  [h, ...t] -> if h >= '0' and h <= '9' { 1 + count_digits(t) } else { 0 }
+}
+
+fn drop_suffix_run(s: String, suffix: String) : String =
+  match string.drop_suffix(s, suffix) {
+    Some(r) -> drop_suffix_run(r, suffix)
+    None    -> s
+  }

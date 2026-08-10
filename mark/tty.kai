@@ -1,0 +1,20 @@
+#[doc("""
+What has to be asked of the terminal: whether output is one, and how
+big it is.
+
+`is_terminal` rides the `Stdout` effect, but the size still comes from
+terevaka's C shim — the stdlib has no `TIOCGWINSZ` — so this module is
+where `Ffi` enters and why the markdown pipeline, which does not import
+it, stays pure.
+""")]
+
+import terevaka.term as term
+
+#[doc("True when stdout is a terminal rather than a file or a pipe.")]
+pub fn is_terminal() : Bool / Stdout = Stdout.is_tty()
+
+#[doc("Terminal columns; 80 when there is no terminal to ask.")]
+pub fn columns() : Int / Ffi = term.cols()
+
+#[doc("Terminal rows; 24 when there is no terminal to ask.")]
+pub fn rows() : Int / Ffi = term.rows()

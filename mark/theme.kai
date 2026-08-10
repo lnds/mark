@@ -1,0 +1,80 @@
+#[doc("""
+The ANSI codes per element, as pure values.
+
+The theme defines its own sequences instead of importing them from
+`terevaka.term`: that way the render pipeline drags in no C shim, and
+its tests are string comparisons with no terminal involved.
+""")]
+
+#[doc("""
+One style per document element. Each field is the ANSI prefix that
+opens the style; `reset` closes it. The `plain` theme leaves them all
+empty, which is how colour is turned off without touching the renderer.
+""")]
+#[derive(Eq, Show)]
+pub type Theme = {
+  heading: String,
+  emph: String,
+  strong: String,
+  code: String,
+  link: String,
+  url: String,
+  quote: String,
+  marker: String,
+  rule: String,
+  reset: String,
+}
+
+#[doc("Theme for a dark background: the default.")]
+pub fn dark() : Theme = Theme {
+  heading: "#{esc()}[1;36m",
+  emph: "#{esc()}[3m",
+  strong: "#{esc()}[1m",
+  code: "#{esc()}[33m",
+  link: "#{esc()}[4;34m",
+  url: "#{esc()}[2m",
+  quote: "#{esc()}[32m",
+  marker: "#{esc()}[35m",
+  rule: "#{esc()}[2m",
+  reset: "#{esc()}[0m",
+}
+
+#[doc("Theme for a light background: the same roles, in tones that hold up on white.")]
+pub fn light() : Theme = Theme {
+  heading: "#{esc()}[1;34m",
+  emph: "#{esc()}[3m",
+  strong: "#{esc()}[1m",
+  code: "#{esc()}[31m",
+  link: "#{esc()}[4;34m",
+  url: "#{esc()}[2m",
+  quote: "#{esc()}[36m",
+  marker: "#{esc()}[35m",
+  rule: "#{esc()}[2m",
+  reset: "#{esc()}[0m",
+}
+
+#[doc("Colourless theme: output to a file or a pipe.")]
+pub fn plain() : Theme = Theme {
+  heading: "",
+  emph: "",
+  strong: "",
+  code: "",
+  link: "",
+  url: "",
+  quote: "",
+  marker: "",
+  rule: "",
+  reset: "",
+}
+
+#[doc("Resolves a theme by name; anything else falls back to `dark`.")]
+pub fn by_name(name: String) : Theme {
+  case "light" -> light()
+  case "plain" -> plain()
+  case "none"  -> plain()
+  case _       -> dark()
+}
+
+# String literals have no unicode escape, so ESC is built from its
+# codepoint.
+fn esc() : String = "#{int_to_char(27)}"

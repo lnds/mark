@@ -1,0 +1,57 @@
+import mark.render
+import mark.theme
+import mark.parser
+import mark.ast
+import core.string as string
+
+# With the `plain` theme the output is layout alone: line breaking and
+# indentation get checked with no codes in the way.
+fn plain(src: String, width: Int) : [String] =
+  render.render(theme.plain(), width, parser.parse(src))
+
+test "a paragraph breaks between words, never inside one" {
+  assert plain("one two three four five", 20) == ["one two three four", "five"]
+  assert plain("supercalifragilistic ok", 20) == ["supercalifragilistic", "ok"]
+}
+
+test "a heading keeps its hashes and aligns the continuation" {
+  assert plain("## A title", 40) == ["## A title"]
+  let wrapped = plain("### one two three four", 20)
+  assert wrapped == ["### one two three", "    four"]
+}
+
+test "blocks are separated by a blank line" {
+  assert plain("one\n\ntwo", 40) == ["one", "", "two"]
+}
+
+test "code is indented and never wrapped" {
+  let out = plain("```\na very long line that is left alone\n```", 20)
+  assert out == ["  a very long line that is left alone"]
+}
+
+test "a quote carries its bar on every line" {
+  assert plain("> hi", 40) == ["│ hi"]
+}
+
+test "lists align the continuation under the item text" {
+  assert plain("- one\n- two", 40) == ["• one", "• two"]
+  assert plain("1. one\n2. two", 40) == ["1. one", "2. two"]
+  assert plain("10. ten", 40) == ["10. ten"]
+}
+
+test "the rule spans the requested width" {
+  assert plain("---", 24) == [string.repeat("─", 24)]
+}
+
+test "a link shows its destination, which would otherwise be lost" {
+  assert plain("[kaikai](https://kaikai-lang.org)", 60) ==
+    ["kaikai (https://kaikai-lang.org)"]
+}
+
+test "the theme paints and closes the style" {
+  let esc = "#{int_to_char(27)}"
+  let out = render.render(theme.dark(), 40, parser.parse("a *fact*"))
+  assert out == ["a #{esc}[3mfact#{esc}[0m"]
+}
+
+fn main() : Int = 0
