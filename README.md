@@ -59,6 +59,29 @@ collide with the `mark/` source directory. `make` is only shorthand for that and
 the commands below; nothing depends on it. `make install` copies to `~/bin`
 instead (`PREFIX=/usr/local` for `/usr/local/bin`).
 
+## Shell completion
+
+`completions/_mark` completes the flags, their values, and the markdown files
+in the directory — only the markdown ones, unless there are none, and then
+everything. Drop it anywhere in zsh's `$fpath`:
+
+```sh
+make install-completions                                   # Homebrew's site-functions
+make install-completions ZSH_COMPLETION_DIR=~/.zsh/completions
+```
+
+Then start a new shell, or `rm -f ~/.zcompdump* && compinit` to clear the cache.
+
+**It has to come before zsh's stock functions in `$fpath`, not merely be in it.**
+zsh ships a completion for [MH](https://www.nongnu.org/nmh/), the 1980s mail
+handler, and `mark` is one of MH's commands — so `_mh` claims the name. With MH
+absent it returns non-zero, which *suppresses* the default file completion
+rather than falling back to it, and `mark <TAB>` offers nothing at all. That is
+the symptom this file fixes. Homebrew's `site-functions` and oh-my-zsh's
+`custom/completions` both sort ahead of `/usr/share/zsh/*/functions`, so either
+works. Without installing anything, `compdef _files mark` in `~/.zshrc` at least
+restores plain file completion.
+
 ## Usage
 
 ```

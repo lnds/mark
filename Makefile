@@ -13,7 +13,7 @@ BUILD   := build
 
 SRC := main.kai $(wildcard mark/*.kai)
 
-.PHONY: all run test lint fmt check clean deps install uninstall
+.PHONY: all run test lint fmt check clean deps install uninstall install-completions
 
 all: $(BUILD)/mark
 
@@ -40,6 +40,18 @@ install: all
 
 uninstall:
 	rm -f $(PREFIX)/bin/mark
+
+# The completion has to sort ahead of zsh's stock functions, where _mh
+# claims the name `mark` for the MH mail handler. Homebrew's
+# site-functions does; override for anywhere else on $fpath.
+ZSH_COMPLETION_DIR ?= $(shell brew --prefix 2>/dev/null)/share/zsh/site-functions
+
+install-completions:
+	@test -d "$(ZSH_COMPLETION_DIR)" \
+	  || { echo "no such directory: $(ZSH_COMPLETION_DIR)"; \
+	       echo "set ZSH_COMPLETION_DIR to a directory on your \$$fpath"; exit 1; }
+	cp completions/_mark $(ZSH_COMPLETION_DIR)/_mark
+	@echo "installed. start a new shell, or: rm -f ~/.zcompdump* && compinit"
 
 run: all
 	./$(BUILD)/mark

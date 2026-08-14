@@ -1,0 +1,55 @@
+#compdef mark
+#
+# zsh completion for mark, a markdown viewer for the terminal.
+#
+# This file has to WIN the name `mark`, not merely define it: zsh ships
+# an _mh completion whose #compdef line claims `mark` for the MH mail
+# handler, and with MH absent it returns non-zero, which suppresses the
+# default file completion instead of falling back to it. Whichever
+# definition compinit reaches first in $fpath wins, so this file's
+# directory belongs ahead of the stock functions. See README.
+#
+# No option is spelled `--opt=value` here: mark reads a flag's argument
+# as the next token only, so `--color=never` is an unknown option to it.
+
+_mark() {
+  _arguments -s -S \
+    '(- *)'{-h,--help}'[show the help and exit]' \
+    '(- *)'{-v,--version}'[show the version and exit]' \
+    '(-w --width)'{-w,--width}'[output width in columns]:columns:_mark_width' \
+    '(-s --style)'{-s,--style}'[colour scheme]:style:((
+        dark\:"for a dark background"
+        light\:"for a light background"
+        auto\:"decide from the terminal"))' \
+    '--color[when to emit ANSI colour]:when:((
+        auto\:"on for a terminal, off for a pipe or a file"
+        always\:"force colour even when piped"
+        never\:"plain text (NO_COLOR does the same)"))' \
+    '(-p --pager -P --no-pager)'{-p,--pager}'[page even when the text fits on screen]' \
+    '(-p --pager -P --no-pager)'{-P,--no-pager}'[dump everything at once, without paging]' \
+    '1:document:_mark_source'
+}
+
+# The width is a free number; offering the usual ones beats offering
+# nothing, and typing over them still works.
+_mark_width() {
+  _alternative \
+    'widths:common width:(60 72 80 100 120)' \
+    'columns:columns: _message -e columns "a positive number of columns"'
+}
+
+# mark takes the first bare argument as the document and ignores the
+# rest, so only this one position is worth completing.
+#
+# Markdown files alone when the directory has any — listing a project's
+# images and scripts beside its README is noise. Everything else only
+# when nothing matched, since mark renders any text file it is handed.
+_mark_source() {
+  local -a md_ext
+  md_ext=(md markdown mdown mkd mkdn mdwn text)
+
+  _files -g "*.(${(j:|:)md_ext})(-.)" && return 0
+  _files
+}
+
+_mark "$@"
