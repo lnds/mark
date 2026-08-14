@@ -6,7 +6,7 @@ afterwards whatever depends on the terminal (real width, colour).
 
 import core.string as string
 
-pub const VERSION : String = "0.1.0"
+pub const VERSION : String = "0.2.0"
 
 #[doc("Where the document comes from, already resolved from the arguments.")]
 #[derive(Eq, Show)]

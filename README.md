@@ -16,9 +16,9 @@ mark -P doc.md | less    # dump, no pager
 
 ## Install
 
-mark is built from source, so you need the kaikai compiler first — **0.110 or
-later**. Either installer works; the binary is self-contained and needs no
-system LLVM:
+mark is built from source, so you need the kaikai compiler first — **0.112 or
+later**, the version that reads a dependency's `[native]` table. Either
+installer works; the binary is self-contained and needs no system LLVM:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/kaikailang-org/kaikai/main/install.sh | sh
@@ -34,18 +34,30 @@ brew install kaikailang-org/kaikai/kaikai
 Already have it? `kai upgrade` self-updates in place (on a Homebrew install it
 points you at `brew upgrade` instead).
 
-Then build mark:
+Then install mark, straight from the repository:
+
+```sh
+kai install github.com/lnds/mark      # -> ~/.kaikai/bin/mark, already on PATH
+```
+
+That is the whole thing: the dependency is fetched, the terminal shim it binds
+comes declared in its own manifest, and the binary lands in `$KAIKAI_HOME/bin`.
+Pass `--force` to replace an install already there.
+
+From a clone, if you want the source too:
 
 ```sh
 git clone https://github.com/lnds/mark
 cd mark
-make            # -> build/mark
-make install    # -> ~/bin/mark   (PREFIX=/usr/local for /usr/local/bin)
+kai install .   # -> ~/.kaikai/bin/mark
+make            # -> build/mark, to run it from the tree
 ```
 
-The build goes through `make`, not a bare `kai build`: terevaka drives the
-terminal through a C shim and `kai build` injects no link flags, so it travels in
-`CFLAGS`. `make` fetches the dependency on first run.
+Build it by hand with `kai build . -o build/mark`, creating `build/` first — the
+`-o` is not optional here, since the default output name would be `mark` and
+collide with the `mark/` source directory. `make` is only shorthand for that and
+the commands below; nothing depends on it. `make install` copies to `~/bin`
+instead (`PREFIX=/usr/local` for `/usr/local/bin`).
 
 ## Usage
 

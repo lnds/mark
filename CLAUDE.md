@@ -10,7 +10,7 @@ glow: a CLI that renders a file (or stdin) to ANSI and exits, and a pager that w
 screen.
 
 **Actual state:** the CLI and the pager work end to end — arguments, block parser, inline
-scanner, theme, ANSI renderer and paging over terevaka, with 51 tests and 2 property
+scanner, theme, ANSI renderer and paging over terevaka, with 53 tests and 2 property
 checks green. What is missing is the **file finder** (`mark/finder.kai` over
 `fs.dir.walk`): with no arguments `mark` prints the help, and that is where it would go.
 
@@ -24,21 +24,35 @@ descriptor, which by then is exhausted, leaving it no way to be told to quit. `-
 
 ## Commands
 
-The build **goes through `make`, not a bare `kai build`**: terevaka drives the terminal
-through a C shim and `kai build` injects no link flags, so it travels in `CFLAGS`. The
-`Makefile` derives that path from the sha in `kai.lock`, so `kai update` does not break
-it. That shim is the only one — everything else mark asks of the terminal now comes from
-the stdlib.
+`kai build .` is enough — **nothing in the build is load-bearing on `make` any more**.
+terevaka declares its terminal shim in its own manifest (`[native]`, needs kai 0.112+), so
+the driver compiles and links it for `build`, `run`, `test` and `install`, transitively.
+mark therefore installs like any other package:
 
 ```sh
-make              # compiles -> build/mark
-make install      # copies to ~/bin (PREFIX overrides)
+kai install github.com/lnds/mark    # or `kai install .` from a clone
+```
+
+**Never put terevaka's shim back into `CFLAGS`.** The two channels do not deduplicate:
+the same translation unit arriving from `[native]` and from `CFLAGS` is linked twice and
+the build dies with `ld: 6 duplicate symbols` on `kai_tvk_raw_enable` and its
+neighbours. `KAI_NATIVE_DEPS=0` turns the `[native]` channel off if some build ever needs
+the old way.
+
+`kai build .` needs its `-o`: the default output name is the package name, `mark`, which
+collides with the `mark/` source directory (`ld: ... errno=21 (Is a directory)`).
+
+The `Makefile` is now shorthand, not machinery:
+
+```sh
+make              # kai build . -o build/mark (creates build/ first)
+make install      # copies to ~/bin (PREFIX overrides) — `kai install .` is the usual path
 make run
 make test         # kai test . (root package plus each file in tests/)
 make check        # property checks, file by file
 make lint         # kai lint .
 make fmt          # kai fmt . — canonical formatting
-make deps         # kai install (regenerates kai.lock from kai.toml)
+make deps         # kai fetch (regenerates kai.lock from kai.toml)
 make clean
 ```
 
@@ -142,7 +156,9 @@ skips the inline scanner and the wrap) isolates how much of it belongs to the pa
 ## terevaka: the TUI layer
 
 `terevaka` (github.com/kaikailang-org/terevaka, pinned by sha in `kai.lock`) is the
-ecosystem's TUI framework. Verified: compiles and runs with kai 0.110.0.
+ecosystem's TUI framework. Verified: compiles and runs with kai 0.112.1. The pin is a
+`main` sha past the v0.1.4 tag, for the still-unreleased commit that moved the C shim into
+the manifest's `[native]` table; `kai.lock` keeps the build reproducible regardless.
 
 It is **TEA (Elm Architecture)**: you define a `Model`, an `update(model, key) -> Step[m]`
 and a `view(model) -> Ui`; `app.run` owns raw mode, the input loop, painting and teardown.
@@ -207,11 +223,12 @@ Every one of these cost a compile cycle here; do not repeat them.
 - **The stderr op is `Stderr.eprint`, not `print`.**
 - **`fs.file.read` panics on any I/O failure.** That is its design; to handle the error,
   `File.read_file(path)` returns `Result[String, String]`.
-- **`terevaka.term` does not tell EOF from an unknown key:** both arrive as `Key::Unknown`
-  and, since polling a closed descriptor returns instantly, the loop spins at 100% CPU with
-  no way out. `pager.kai` cuts off by counting consecutive `Unknown`s (`blind_limit`),
-  leaning on the fact that a live terminal interleaves `Tick`s.
-  ([terevaka#6](https://github.com/kaikailang-org/terevaka/issues/6))
+- **`pager.kai` still carries a workaround whose bug is gone.** `terevaka.term` used to
+  report EOF and an undecodable key both as `Key::Unknown`, so a closed descriptor spun the
+  loop at 100% CPU; `blind_limit` cuts off after 200 consecutive `Unknown`s. terevaka 0.1.4
+  closed that ([terevaka#6](https://github.com/kaikailang-org/terevaka/issues/6)): `Key`
+  gained an `Eof` variant and `app.run` ends on it in the runtime. The counter and
+  `Model.blind` are now dead weight and can go.
 - **A package importing `terevaka.ui` runs terevaka's tests too.** A red line there is not
   necessarily this project's — check whose file it is before chasing it.
 
