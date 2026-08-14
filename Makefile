@@ -13,7 +13,9 @@ BUILD   := build
 
 SRC := main.kai $(wildcard mark/*.kai)
 
-.PHONY: all run test lint fmt check clean deps install uninstall install-completions
+.PHONY: all run test lint fmt check clean deps install uninstall \
+        install-completions install-completion-zsh install-completion-bash \
+        install-completion-fish
 
 all: $(BUILD)/mark
 
@@ -41,17 +43,36 @@ install: all
 uninstall:
 	rm -f $(PREFIX)/bin/mark
 
-# The completion has to sort ahead of zsh's stock functions, where _mh
-# claims the name `mark` for the MH mail handler. Homebrew's
-# site-functions does; override for anywhere else on $fpath.
-ZSH_COMPLETION_DIR ?= $(shell brew --prefix 2>/dev/null)/share/zsh/site-functions
+BREW_PREFIX := $(shell brew --prefix 2>/dev/null)
 
-install-completions:
-	@test -d "$(ZSH_COMPLETION_DIR)" \
-	  || { echo "no such directory: $(ZSH_COMPLETION_DIR)"; \
-	       echo "set ZSH_COMPLETION_DIR to a directory on your \$$fpath"; exit 1; }
-	cp completions/_mark $(ZSH_COMPLETION_DIR)/_mark
-	@echo "installed. start a new shell, or: rm -f ~/.zcompdump* && compinit"
+# The zsh completion has to sort ahead of zsh's stock functions, where
+# _mh claims the name `mark` for the MH mail handler. Homebrew's
+# site-functions does; override for anywhere else on $fpath.
+ZSH_COMPLETION_DIR  ?= $(BREW_PREFIX)/share/zsh/site-functions
+BASH_COMPLETION_DIR ?= $(BREW_PREFIX)/etc/bash_completion.d
+FISH_COMPLETION_DIR ?= $(HOME)/.config/fish/completions
+
+# Each shell is installed on its own, and a missing directory is a skip
+# rather than an error: few machines have all three.
+install-completions: install-completion-zsh install-completion-bash install-completion-fish
+
+install-completion-zsh:
+	@if [ -d "$(ZSH_COMPLETION_DIR)" ]; then \
+	  cp completions/_mark "$(ZSH_COMPLETION_DIR)/_mark" \
+	    && echo "zsh  -> $(ZSH_COMPLETION_DIR)/_mark"; \
+	else echo "zsh  -- skipped, no $(ZSH_COMPLETION_DIR)"; fi
+
+install-completion-bash:
+	@if [ -d "$(BASH_COMPLETION_DIR)" ]; then \
+	  cp completions/mark.bash "$(BASH_COMPLETION_DIR)/mark" \
+	    && echo "bash -> $(BASH_COMPLETION_DIR)/mark"; \
+	else echo "bash -- skipped, no $(BASH_COMPLETION_DIR)"; fi
+
+install-completion-fish:
+	@if [ -d "$(FISH_COMPLETION_DIR)" ]; then \
+	  cp completions/mark.fish "$(FISH_COMPLETION_DIR)/mark.fish" \
+	    && echo "fish -> $(FISH_COMPLETION_DIR)/mark.fish"; \
+	else echo "fish -- skipped, no $(FISH_COMPLETION_DIR)"; fi
 
 run: all
 	./$(BUILD)/mark
