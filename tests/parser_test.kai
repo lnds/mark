@@ -21,6 +21,35 @@ test "horizontal rule and its ambiguity with a bullet" {
   assert parser.parse("--") == [Para([Text("--")])]
 }
 
+test "setext headings, and the rule they are ambiguous with" {
+  assert parser.parse("Title\n=====") == [Heading(1, [Text("Title")])]
+  assert parser.parse("Title\n-----") == [Heading(2, [Text("Title")])]
+  assert parser.parse("Two\nlines\n===") == [Heading(1, [Text("Two lines")])]
+  # A single `-` underlines; three on their own are still a rule.
+  assert parser.parse("Title\n-") == [Heading(2, [Text("Title")])]
+  assert parser.parse("---") == [Rule]
+  assert parser.parse("\n---") == [Rule]
+  # An underline with nothing above it is text, not a heading.
+  assert parser.parse("===") == [Para([Text("===")])]
+  # `***` underlines nothing: it stays the rule it was.
+  assert parser.parse("Title\n***") == [Para([Text("Title")]), Rule]
+}
+
+test "four spaces open a code block, except inside a paragraph" {
+  assert parser.parse("    code") == [Code("", ["code"])]
+  assert parser.parse("    one\n    two") == [Code("", ["one", "two"])]
+  # Deeper indentation survives; only one level is stripped.
+  assert parser.parse("    one\n      deep") == [Code("", ["one", "  deep"])]
+  # A blank line inside is kept, one trailing it is not.
+  assert parser.parse("    one\n\n    two") == [Code("", ["one", "", "two"])]
+  assert parser.parse("    one\n\nafter") == [Code("", ["one"]), Para([Text("after")])]
+  # Indentation does not open a block mid-paragraph: it is a lazy
+  # continuation, which is why the two lines join.
+  assert parser.parse("text\n    indented") == [Para([Text("text indented")])]
+  # Markup inside is inert, the point of a code block.
+  assert parser.parse("    # not a heading") == [Code("", ["# not a heading"])]
+}
+
 test "code block: the body stays raw" {
   let fenced = parser.parse("```kai\nlet x = 1\n# not a heading\n```")
   assert fenced == [Code("kai", ["let x = 1", "# not a heading"])]

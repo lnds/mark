@@ -32,10 +32,13 @@ fn blocks(ls: [String]) : [ast.Block] = match ls {
 }
 
 # Precedence is the order of this list, not a chain of `else`: a
-# horizontal rule (`---`) reads as a list item (`- `) if tried later.
+# horizontal rule (`---`) reads as a list item (`- `) if tried later,
+# and indented code goes first because every other recogniser trims the
+# indent away before looking at the line.
 # The paragraph closes the list by being the case that accepts anything.
 fn block_at(ls: [String]) : Parsed =
-  match list.find_map([rule_at, heading_at, code_at, quote_at, bullets_at, ordered_at],
+  match list.find_map([indented_code_at, rule_at, heading_at, code_at, quote_at,
+                       bullets_at, ordered_at],
                       (recognise) => recognise(ls)) {
     Some(parsed) -> parsed
     None         -> take_para(ls, [])
@@ -110,6 +113,42 @@ fn take_code(opener: String, marker: String, rest: [String]) : Parsed = {
   let lang = string.trim(string.slice(t, marker.length(), t.length() - marker.length()))
   let (body, tail) = list.span(rest, (l) => fence_marker(l) != Some(marker))
   (Code(lang, body), list.drop(tail, 1))
+}
+
+# ---- Indented code ----
+
+# Four spaces, or a tab, open a code block wherever a block may start.
+# Inside a paragraph the same indent is a continuation line instead,
+# which is why `interrupts_para` deliberately leaves this one out.
+fn indented_code_at(ls: [String]) : Option[Parsed] =
+  if is_indented(first_line(ls)) { Some(take_indented(ls, [], 0)) } else { None }
+
+fn is_indented(l: String) : Bool =
+  not string.is_blank(l) and
+  (string.starts_with(l, "    ") or string.starts_with(l, "\t"))
+
+# Blank lines are carried as a count and only paid for when another
+# indented line follows: the ones trailing the block belong to the
+# document, not to the code.
+fn take_indented(ls: [String], acc: [String], blanks: Int) : Parsed = match ls {
+  [] -> (Code("", list.reverse(acc)), [])
+  [h, ...t] ->
+    if string.is_blank(h) {
+      take_indented(t, acc, blanks + 1)
+    } else if is_indented(h) {
+      take_indented(t, [strip_indent(h), ...blank_run(blanks, acc)], 0)
+    } else {
+      (Code("", list.reverse(acc)), ls)
+    }
+}
+
+fn blank_run(n: Int, acc: [String]) : [String] =
+  if n <= 0 { acc } else { blank_run(n - 1, ["", ...acc]) }
+
+# One level of indent only, so deeper indentation survives into the code.
+fn strip_indent(l: String) : String = match string.drop_prefix(l, "    ") {
+  Some(r) -> r
+  None    -> match string.drop_prefix(l, "\t") { Some(r) -> r; None -> l }
 }
 
 # ---- Quotes ----
@@ -216,17 +255,38 @@ fn take_continuation(ls: [String], indent: Int, acc: [String]) : ([String], [Str
 fn take_para(ls: [String], acc: [String]) : Parsed = match ls {
   [] -> (para_of(acc), [])
   [h, ...t] ->
-    if acc.length() > 0 and (string.is_blank(h) or interrupts_para(h)) {
-      (para_of(acc), ls)
-    } else {
-      take_para(t, [string.trim(h), ...acc])
+    match setext_level(h) {
+      Some(n) if acc.length() > 0 -> (Heading(n, inline.scan(para_text(acc))), t)
+      _ ->
+        if acc.length() > 0 and (string.is_blank(h) or interrupts_para(h)) {
+          (para_of(acc), ls)
+        } else {
+          take_para(t, [string.trim(h), ...acc])
+        }
     }
+}
+
+# The underline of a setext heading: a run of `=` titles level 1, one of
+# `-` level 2. `---` reads as a rule too, and the ambiguity resolves by
+# position — with a paragraph above it the heading wins, and standing
+# alone it never reaches here, `block_at` having taken it as a rule.
+fn setext_level(l: String) : Option[Int] = {
+  let cs = string.chars(string.trim(l))
+  match cs {
+    []        -> None
+    [h, ..._] ->
+      if not list.all(cs, (c) => c == h) { None }
+      else if h == '=' { Some(1) }
+      else if h == '-' { Some(2) }
+      else { None }
+  }
 }
 
 # The lines arrive backwards, joined by a space: a paragraph's newlines
 # are not breaks, the renderer decides where it wraps.
-fn para_of(acc: [String]) : ast.Block =
-  Para(inline.scan(string.join(list.reverse(acc), " ")))
+fn para_text(acc: [String]) : String = string.join(list.reverse(acc), " ")
+
+fn para_of(acc: [String]) : ast.Block = Para(inline.scan(para_text(acc)))
 
 fn interrupts_para(l: String) : Bool =
   is_rule(l) or is_quote(l) or heading_level(l) != None or
