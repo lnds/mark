@@ -49,7 +49,7 @@ test "a link shows its destination, which would otherwise be lost" {
 }
 
 test "the theme paints and closes the style" {
-  let esc = "#{int_to_char(27)}"
+  let esc = "\u{1b}"
   let out = render.render(theme.dark(), 40, parser.parse("a *fact*"))
   assert out == ["a #{esc}[3mfact#{esc}[0m"]
 }

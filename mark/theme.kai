@@ -75,6 +75,4 @@ pub fn by_name(name: String) : Theme {
   case _       -> dark()
 }
 
-# String literals have no unicode escape, so ESC is built from its
-# codepoint.
-fn esc() : String = "#{int_to_char(27)}"
+fn esc() : String = "\u{1b}"
