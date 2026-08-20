@@ -27,21 +27,10 @@ pub type Model = {
   top: Int,
   height: Int,
   name: String,
-  blind: Int,
 }
 
 pub fn model(lines: [String], rows: Int, name: String) : Model =
-  Model { lines: lines, top: 0, height: max_int(rows - 1, 1), name: name, blind: 0 }
-
-#[doc("""
-How many unreadable keys in a row before the input is declared dead.
-
-A closed stdin is indistinguishable from an unknown key: both arrive as
-`Unknown`. But polling a closed descriptor returns instantly and with no
-`Tick`, so a burst with no pause can only be that. Without this cut-off
-the loop spins against an EOF forever.
-""")]
-pub fn blind_limit() : Int = 200
+  Model { lines: lines, top: 0, height: max_int(rows - 1, 1), name: name }
 
 #[doc("""
 Columns and rows the terevaka frame keeps for itself.
@@ -64,7 +53,6 @@ pub fn scroll(m: Model, delta: Int) : Model = Model {
   top: clamp(m.top + delta, 0, last_top(m)),
   height: m.height,
   name: m.name,
-  blind: 0,
 }
 
 #[doc("The visible lines, padded out to the height of the window.")]
@@ -114,19 +102,7 @@ pub fn step(m: Model, k: term.Key) : Option[Model] = match k {
   Printable('u') -> Some(scroll(m, 0 - (m.height / 2)))
   Printable('g') -> Some(scroll(m, 0 - m.lines.length()))
   Printable('G') -> Some(scroll(m, m.lines.length()))
-  Unknown if m.blind + 1 >= blind_limit() -> None
-  Unknown        -> Some(blinder(m))
   _              -> Some(scroll(m, 0))
-}
-
-# A `Tick` or any readable key proves the input is still alive, and
-# `scroll` puts the count back to zero.
-fn blinder(m: Model) : Model = Model {
-  lines: m.lines,
-  top: m.top,
-  height: m.height,
-  name: m.name,
-  blind: m.blind + 1,
 }
 
 #[doc("""

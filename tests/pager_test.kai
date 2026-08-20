@@ -43,27 +43,6 @@ test "the keys do what the help says" {
   assert pager.step(m, Tick) == Some(m)
 }
 
-# A closed stdin arrives as a burst of `Unknown` with no `Tick`: without
-# this cut-off the loop would spin against the EOF forever.
-test "a burst of unreadable keys declares the input dead" {
-  assert blind_run(m5(), pager.blind_limit()) == None
-  assert blind_run(m5(), pager.blind_limit() - 1) != None
-}
-
-# A `Tick` proves the input is breathing and resets the count.
-test "a tick breaks the run of unreadable keys" {
-  let almost = blind_run(m5(), pager.blind_limit() - 1)
-  let revived = match almost { Some(m) -> pager.step(m, Tick); None -> None }
-  let after = match revived { Some(m) -> blind_run(m, 1); None -> None }
-  assert after != None
-}
-
-fn blind_run(m: pager.Model, n: Int) : Option[pager.Model] =
-  if n <= 0 { Some(m) } else { match pager.step(m, Unknown) {
-    Some(next) -> blind_run(next, n - 1)
-    None       -> None
-  } }
-
 # The terevaka frame paints from row 2, column 4: a frame using the full
 # height or width overflows, the terminal wraps, and the resulting
 # scroll shifts the whole frame.
