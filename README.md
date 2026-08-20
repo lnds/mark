@@ -118,7 +118,8 @@ file, off when `NO_COLOR` is set, and whatever `--color` says over all of it.
 
 ## What it renders
 
-Headings, paragraphs with word wrapping, fenced code, nested quotes, bullet and
+Headings — both `#` and the underlined setext form — paragraphs with word
+wrapping, code both fenced and indented four spaces, nested quotes, bullet and
 ordered lists with sublists, horizontal rules; and inline: emphasis, strong,
 code spans, links (with the destination shown, since a terminal has nowhere to
 hide it) and backslash escapes.
@@ -157,7 +158,7 @@ kai typecheck .   # the fast loop: front end only
 make test         # kai test . (root package plus each file in tests/)
 make check        # property checks, file by file
 make lint
-make fmt
+make fmt          # file by file: kai fmt . only formats the entry point
 ```
 
 `kai test` on a package that imports `terevaka.ui` also runs terevaka's own test

@@ -51,7 +51,8 @@ make run
 make test         # kai test . (root package plus each file in tests/)
 make check        # property checks, file by file
 make lint         # kai lint .
-make fmt          # kai fmt . — canonical formatting
+make fmt          # canonical formatting, file by file
+make fmt-check    # names the files that are not formatted, without touching them
 make deps         # kai fetch (regenerates kai.lock from kai.toml)
 make clean
 ```
@@ -107,7 +108,11 @@ argv/stdin/file            parse           render             output
 - `mark/ast.kai` — blocks (heading, paragraph, list, code fence, quote, rule) and inline
   (emphasis, code, link).
 - `mark/parser.kai` — `String -> [Block]`. Containers de-indent their lines and re-enter
-  `blocks`, so nesting falls out of the recursion.
+  `blocks`, so nesting falls out of the recursion. Two shapes are decided by position
+  rather than by prefix, and both live where the ambiguity is: a setext underline is
+  recognised inside `take_para`, since `---` is a rule standing alone and a heading with a
+  paragraph above it; and indented code goes **first** in `block_at`'s recogniser list,
+  because every other recogniser trims the indent away before it looks at the line.
 - `mark/inline.kai` — the text of a line to `[Inline]`. An unclosed delimiter **degrades
   to literal text**: ambiguity never loses content.
 - `mark/render.kai` — `[Block] -> [String]` with ANSI, at a given width.
@@ -156,7 +161,7 @@ skips the inline scanner and the wrap) isolates how much of it belongs to the pa
 ## terevaka: the TUI layer
 
 `terevaka` (github.com/kaikailang-org/terevaka, pinned by sha in `kai.lock`) is the
-ecosystem's TUI framework. Verified: compiles and runs with kai 0.112.1. The pin is a
+ecosystem's TUI framework. Verified: compiles and runs with kai 0.113.0. The pin is a
 `main` sha past the v0.1.4 tag, for the still-unreleased commit that moved the C shim into
 the manifest's `[native]` table; `kai.lock` keeps the build reproducible regardless.
 
@@ -203,10 +208,6 @@ Every one of these cost a compile cycle here; do not repeat them.
   `type Config` can silently break a dependency's type; the diagnostic points elsewhere and
   never mentions the collision.
   ([kaikai#1726](https://github.com/lnds/kaikai/issues/1726))
-- **There is no unicode escape in string literals.** `"\u{1b}"` comes out as the text
-  `u{1b}`, with no error, and an unknown escape silently drops the backslash. ESC is built
-  from its codepoint: `"#{int_to_char(27)}"` (see `theme.esc`).
-  ([kaikai#1720](https://github.com/lnds/kaikai/issues/1720))
 - **Match arms on one line are separated by `;`, not `,`.** A comma gives `expected
   pattern`.
 - **`text.char_width` takes an `Int`, not a `Char`** — `char_to_int(c)` first. The error
@@ -223,21 +224,39 @@ Every one of these cost a compile cycle here; do not repeat them.
 - **The stderr op is `Stderr.eprint`, not `print`.**
 - **`fs.file.read` panics on any I/O failure.** That is its design; to handle the error,
   `File.read_file(path)` returns `Result[String, String]`.
-- **`pager.kai` still carries a workaround whose bug is gone.** `terevaka.term` used to
-  report EOF and an undecodable key both as `Key::Unknown`, so a closed descriptor spun the
-  loop at 100% CPU; `blind_limit` cuts off after 200 consecutive `Unknown`s. terevaka 0.1.4
-  closed that ([terevaka#6](https://github.com/kaikailang-org/terevaka/issues/6)): `Key`
-  gained an `Eof` variant and `app.run` ends on it in the runtime. The counter and
-  `Model.blind` are now dead weight and can go.
 - **A package importing `terevaka.ui` runs terevaka's tests too.** A red line there is not
   necessarily this project's — check whose file it is before chasing it.
+- **`kai fmt .` formats the entry point and nothing else.** It walks no further into the
+  package, and exits 0 as though it had — so a tree it calls clean can be entirely
+  unformatted. `make fmt` and `make fmt-check` loop over the files one by one for the same
+  reason `make check` does. Verified on 0.113.0: mangling `mark/theme.kai` and running
+  `kai fmt .` leaves the damage untouched.
+- **`kai fmt` inserts a blank line between consecutive imports.** Not a style choice to
+  adopt: kaikai's own self-hosted sources hold 1368 adjacent import pairs across 152 files,
+  which the formatter would rewrite. This is why the tree is deliberately left unformatted
+  under 0.113.0 — running `make fmt` today spreads the import blocks apart in all 16 files.
 
 Traps that **no longer are** (they were here, and were fixed upstream; do not assume them
 current if you read older code): the `Int` from `main` is the exit code, binary operators
 do continue an expression from the start of a line, `string.trim_left`/`trim_right` and
 `string.from_chars` exist, `pub const` does cross the module boundary, `Stdout.is_tty()`
-removed the need for a hand-written `isatty` shim, and `kai lint` no longer reports
-`#[derive]` impls as dead code.
+removed the need for a hand-written `isatty` shim, `kai lint` no longer reports
+`#[derive]` impls as dead code, and terevaka's shim no longer travels in `CFLAGS` — it is
+declared in its manifest's `[native]` table.
+
+`pager.kai` used to carry a counter for the last of those: `terevaka.term` reported EOF and
+an undecodable key both as `Key::Unknown`, so a closed descriptor spun the loop at 100% CPU
+and `blind_limit` cut it off after 200 in a row. terevaka 0.1.4 closed it
+([terevaka#6](https://github.com/kaikailang-org/terevaka/issues/6)): `Key` gained `Eof` and
+`app.run` ends the loop on it, before `step` is ever called. The counter, `Model.blind` and
+their two tests are gone.
+
+**String literals do have unicode escapes**, since
+[kaikai#1720](https://github.com/lnds/kaikai/issues/1720) closed on 2026-08-10. Verified on
+0.113.0: `"\u{1b}"` is a real ESC, `"\u{263A}"` and the astral `"\u{1F600}"` come out as
+correct UTF-8, and `"\x1b"` works too. An unknown escape is now a **hard error** naming the
+sequence, not a silently dropped backslash. `theme.esc` still builds ESC with
+`int_to_char(27)`, which is no longer necessary — a plain `"\u{1b}"` would do.
 
 The lesson each of those teaches is the same: **this file ages faster than the language**.
 Before working around something it calls missing, spend the thirty seconds to check.

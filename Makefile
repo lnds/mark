@@ -13,7 +13,7 @@ BUILD   := build
 
 SRC := main.kai $(wildcard mark/*.kai)
 
-.PHONY: all run test lint fmt check clean deps install uninstall \
+.PHONY: all run test lint fmt fmt-check check clean deps install uninstall \
         install-completions install-completion-zsh install-completion-bash \
         install-completion-fish
 
@@ -88,8 +88,13 @@ check:
 lint:
 	$(KAI_BIN) lint .
 
+# `kai fmt .` formats the entry point and nothing else, exiting 0 as if
+# it had done the package: the files go one by one here too.
 fmt:
-	$(KAI_BIN) fmt .
+	@for f in main.kai mark/*.kai tests/*.kai; do $(KAI_BIN) fmt $$f; done
+
+fmt-check:
+	@for f in main.kai mark/*.kai tests/*.kai; do $(KAI_BIN) fmt --check $$f >/dev/null || echo "unformatted: $$f"; done
 
 clean:
 	rm -rf $(BUILD)
