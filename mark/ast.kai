@@ -18,11 +18,23 @@ pub type Inline =
   | Link([Inline], String)
 
 #[doc("""
+How a column is aligned, as its delimiter row declared it: `:--` left,
+`--:` right, `:-:` centre, and a bare `---` left, the default.
+""")]
+#[derive(Eq, Show)]
+pub type Align = AlignLeft | AlignCenter | AlignRight
+
+#[doc("""
 A top-level block. `Code` carries the fence language (empty when none
 was declared) and its raw lines, never reinterpreted. `Bullets` and
 `Ordered` hold each item as a list of blocks, which is what allows
 paragraphs and sublists to nest inside an item. `Ordered` remembers the
 number the list started at.
+
+`Table` holds the header row, one alignment per column, and the body
+rows — every row already cut to the header's number of columns, so the
+renderer never has to ask whether a row is ragged. A cell is `[Inline]`
+like any other text: emphasis and links work inside one.
 """)]
 #[derive(Eq, Show)]
 pub type Block =
@@ -32,4 +44,5 @@ pub type Block =
   | Quote([Block])
   | Bullets([[Block]])
   | Ordered(Int, [[Block]])
+  | Table([[Inline]], [Align], [[[Inline]]])
   | Rule

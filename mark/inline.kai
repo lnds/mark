@@ -132,7 +132,8 @@ fn word_edge(buf: [Char]) : Bool = match list.head(buf) {
 }
 
 fn escapable(c: Char) : Bool =
-  list.contains(['\\', '`', '*', '_', '[', ']', '(', ')', '#', '+', '-', '.', '!', '>', '~'], c)
+  list.contains(['\\', '`', '*', '_', '[', ']', '(', ')', '#', '+', '-', '.', '!', '>', '~',
+                 '|'], c)
 
 fn flush(buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
   if buf.is_empty() { acc } else { [Text(string.from_chars(list.reverse(buf))), ...acc] }

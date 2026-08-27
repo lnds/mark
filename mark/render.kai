@@ -65,7 +65,140 @@ fn block(th: theme.Theme, width: Int, b: ast.Block) : [String] = match b {
       let label = "#{start + p.fst}. "
       item(th, width, paint_all(th.marker, label, th.reset), label.length(), p.snd)
     })
+
+  Table(head, aligns, body) -> table(th, width, head, aligns, body)
 }
+
+# ---- Tables ----
+
+# A table is laid out in two passes: the columns are sized from what
+# every cell needs, then each cell is wrapped to the width its column
+# actually got. Wrapping rather than truncating is the same rule the
+# rest of the renderer follows — the width is a constraint on the
+# layout, never a licence to drop text.
+fn table(
+  th: theme.Theme,
+  width: Int,
+  head: [[ast.Inline]],
+  aligns: [ast.Align],
+  body: [[[ast.Inline]]],
+) : [String] = {
+  let head_cells = head | ((c) => styled(th, c, th.strong))
+  let body_cells = body | ((r) => styled_row(th, r))
+  let cols = fit_cols(natural(head_cells, body_cells), width - frame_width(aligns.length()))
+  let bar = (l, mid, r) => paint_all(th.rule, edge(l, mid, r, cols), th.reset)
+  [bar("┌", "┬", "┐")]
+    ++ row(th, head_cells, cols, aligns)
+    ++ [bar("├", "┼", "┤")]
+    ++ (body_cells || ((r) => row(th, r, cols, aligns)))
+    ++ [bar("└", "┴", "┘")]
+}
+
+# What the frame itself costs: a bar between every pair of columns and
+# at both ends, plus the space padding each cell.
+fn frame_width(n: Int) : Int = 3 * n + 1
+
+# The width each column would take if nothing constrained it.
+fn natural(head: [[Cell]], body: [[[Cell]]]) : [Int] =
+  list.enumerate(head) | ((p) => max_int(cells_width(p.snd), col_width(body, p.fst)))
+
+fn col_width(body: [[[Cell]]], i: Int) : Int =
+  max_of(body | ((r) => cells_width(nth_line(r, i))))
+
+# Over budget the columns are trimmed to a common ceiling rather than
+# in proportion to what each asked for. A narrow column that already
+# fitted keeps its width, and only the ones above the ceiling give
+# anything up: cutting proportionally would shave `Module` down to five
+# columns to pay for a long neighbour that is still too long anyway.
+fn fit_cols(nat: [Int], avail: Int) : [Int] =
+  if list.sum(nat) <= avail or avail <= 0 { nat }
+  else { nat | ((w) => max_int(min_int(w, ceiling(nat, avail, 1, 1)), 1)) }
+
+# The highest ceiling under which every column, trimmed to it, still
+# fits the budget.
+fn ceiling(nat: [Int], avail: Int, c: Int, best: Int) : Int =
+  if c > max_of(nat) { best }
+  else if capped(nat, c) <= avail { ceiling(nat, avail, c + 1, c) }
+  else { best }
+
+fn capped(nat: [Int], c: Int) : Int = list.sum(nat | ((w) => min_int(w, c)))
+
+# One source row, which is as many output lines as its tallest cell:
+# the others are padded with blanks so the frame stays rectangular.
+fn row(th: theme.Theme, cells: [[Cell]], cols: [Int], aligns: [ast.Align]) : [String] = {
+  let wrapped = list.zip(cells, cols) | ((p) => wrap_cell(p.fst, p.snd))
+  let bar = paint_all(th.rule, "│", th.reset)
+  range(max_of(wrapped | ((w) => list.length(w)))) | ((i) => bar ++ row_line(th, wrapped, cols, aligns, bar, i))
+}
+
+fn styled_row(th: theme.Theme, r: [[ast.Inline]]) : [[Cell]] = r | ((c) => styled(th, c, ""))
+
+# `wrap` lets a word wider than the margin out whole rather than
+# splitting it, which is right for a paragraph and wrong here: one long
+# word would reach past its bar and break the grid. Inside a cell the
+# word is cut instead — every character is kept, on the next line.
+fn wrap_cell(cs: [Cell], w: Int) : [[Cell]] = {
+  let col = max_int(w, 1)
+  wrap(cs, col, empty_run(), empty_run(), []) || ((l) => chop(l, col, []))
+}
+
+fn chop(l: [Cell], w: Int, acc: [[Cell]]) : [[Cell]] =
+  if cells_width(l) <= w { list.reverse([l, ...acc]) }
+  else {
+    let n = max_int(fits_in(l, w, 0, 0), 1)
+    chop(list.drop(l, n), w, [list.take(l, n), ...acc])
+  }
+
+# How many leading cells fit in `w` columns. A double-width character
+# goes to the next line whole rather than being halved.
+fn fits_in(cs: [Cell], w: Int, n: Int, used: Int) : Int = match cs {
+  [] -> n
+  [c, ...t] -> {
+    let cw = text.char_width(char_to_int(c.ch))
+    if used + cw > w { n } else { fits_in(t, w, n + 1, used + cw) }
+  }
+}
+
+# One output line across every column, each cell padded to its width and
+# closed by the bar that separates it from the next.
+fn row_line(
+  th: theme.Theme,
+  wrapped: [[[Cell]]],
+  cols: [Int],
+  aligns: [ast.Align],
+  bar: String,
+  i: Int,
+) : String =
+  string.join(list.zip3(wrapped, cols, aligns)
+    | ((t) => " #{pad_to(th, nth_line(t.fst, i), t.snd, t.trd)} #{bar}"), "")
+
+fn nth_line(lines: [[Cell]], i: Int) : [Cell] = match list.nth(lines, i) {
+  Some(l) -> l
+  None    -> []
+}
+
+# The cell painted and then padded out to its column. The padding is
+# never painted: a background colour would run past the text the source
+# actually marked.
+fn pad_to(th: theme.Theme, cs: [Cell], w: Int, a: ast.Align) : String = {
+  let gap = max_int(w - cells_width(cs), 0)
+  let body = paint(cs, th.reset)
+  match a {
+    AlignLeft   -> body ++ string.repeat(" ", gap)
+    AlignRight  -> string.repeat(" ", gap) ++ body
+    AlignCenter -> string.repeat(" ", gap / 2) ++ body ++ string.repeat(" ", gap - (gap / 2))
+  }
+}
+
+fn edge(l: String, mid: String, r: String, cols: [Int]) : String =
+  l ++ string.join(cols | ((w) => string.repeat("─", w + 2)), mid) ++ r
+
+fn cells_width(cs: [Cell]) : Int =
+  list.sum(cs | ((c) => text.char_width(char_to_int(c.ch))))
+
+fn max_of(xs: [Int]) : Int = match list.max(xs) { Some(m) -> m; None -> 0 }
+
+fn range(n: Int) : [Int] = list.enumerate(list.repeat(0, n)) | ((p) => p.fst)
 
 # The inner floor is about columns, not legibility: `min_width` governs
 # the width the CLI asks for, but a nested container only needs to be
@@ -202,3 +335,5 @@ fn paint_all(style: String, s: String, rst: String) : String =
   if style == "" or s == "" { s } else { style ++ s ++ rst }
 
 fn max_int(a: Int, b: Int) : Int = if a > b { a } else { b }
+
+fn min_int(a: Int, b: Int) : Int = if a < b { a } else { b }

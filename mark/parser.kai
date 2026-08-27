@@ -38,7 +38,7 @@ fn blocks(ls: [String]) : [ast.Block] = match ls {
 # The paragraph closes the list by being the case that accepts anything.
 fn block_at(ls: [String]) : Parsed =
   match list.find_map([indented_code_at, rule_at, heading_at, code_at, quote_at,
-                       bullets_at, ordered_at],
+                       bullets_at, ordered_at, table_at],
                       (recognise) => recognise(ls)) {
     Some(parsed) -> parsed
     None         -> take_para(ls, [])
@@ -247,6 +247,105 @@ fn take_continuation(ls: [String], indent: Int, acc: [String]) : ([String], [Str
         take_continuation(t, indent, [string.slice(h, indent, h.length() - indent), ...acc])
       }
   }
+
+# ---- Tables ----
+
+# A table is two lines before it is one: a header, and under it the
+# delimiter row that declares the alignments. Neither is a table on its
+# own, which is what keeps a paragraph holding a `|` from becoming one.
+# The counts must agree, as they do in GFM — a mismatch is prose.
+fn table_at(ls: [String]) : Option[Parsed] = match ls {
+  [h, d, ...rest] -> {
+    let head = split_row(h)
+    match delimiter_row(d) {
+      Some(aligns) ->
+        if aligns.length() == head.length() and head.length() >= 1 {
+          Some(take_table(head, aligns, rest, []))
+        } else { None }
+      None -> None
+    }
+  }
+  _ -> None
+}
+
+# The rows run until a blank line or anything that stopped being a row.
+# `acc` gathers backwards and is reversed on the way out.
+fn take_table(
+  head: [String],
+  aligns: [ast.Align],
+  ls: [String],
+  acc: [[[ast.Inline]]],
+) : Parsed = {
+  let l = first_line(ls)
+  if ls.is_empty() or string.is_blank(l) or not has_pipe(l) {
+    (Table(head | ((c) => inline.scan(c)), aligns, list.reverse(acc)), ls)
+  } else {
+    let row = fit_row(split_row(l), aligns.length()) | ((c) => inline.scan(c))
+    take_table(head, aligns, list.drop(ls, 1), [row, ...acc])
+  }
+}
+
+# A ragged row is squared off here rather than in the renderer: short
+# rows gain empty cells, long ones lose the surplus. Dropping a cell is
+# what GFM does, and the alternative — a column the header never
+# announced — has no width and no alignment to be drawn with.
+fn fit_row(cells: [String], n: Int) : [String] = {
+  let short = n - cells.length()
+  if short <= 0 { list.take(cells, n) } else { cells ++ list.repeat("", short) }
+}
+
+fn has_pipe(l: String) : Bool = list.any(string.chars(l), (c) => c == '|')
+
+# The delimiter row: every cell a run of `-` with an optional `:` at
+# either end. It must carry a pipe of its own, which is what keeps a
+# setext underline from opening a one-column table — `Title` over
+# `-----` is a heading, and only `| --- |` is a table.
+fn delimiter_row(l: String) : Option[[ast.Align]] =
+  if not has_pipe(l) { None }
+  else {
+    let cells = split_row(l)
+    if cells.is_empty() or not list.all(cells, is_delimiter) { None }
+    else { Some(cells | ((c) => alignment(c))) }
+  }
+
+fn is_delimiter(c: String) : Bool = {
+  let core = string.trim(drop_edge(drop_edge(string.trim(c), ":", true), ":", false))
+  not string.is_empty(core) and list.all(string.chars(core), (ch) => ch == '-')
+}
+
+fn alignment(c: String) : ast.Align = {
+  let t = string.trim(c)
+  let left = string.starts_with(t, ":")
+  let right = string.ends_with(t, ":")
+  if left and right { AlignCenter }
+  else if right { AlignRight }
+  else { AlignLeft }
+}
+
+fn drop_edge(s: String, edge: String, front: Bool) : String = {
+  let dropped = if front { string.drop_prefix(s, edge) } else { string.drop_suffix(s, edge) }
+  match dropped { Some(r) -> r; None -> s }
+}
+
+# Splits a row on its unescaped pipes, dropping the optional outer pair
+# so `| a | b |` and `a | b` cut the same. A `\|` stays in the cell for
+# the inline scanner to unescape, which is where every other escape is
+# resolved too.
+fn split_row(l: String) : [String] = {
+  let t = drop_edge(drop_edge(string.trim(l), "|", true), "|", false)
+  cut_cells(string.chars(t), [], []) | ((c) => string.trim(c))
+}
+
+fn cut_cells(cs: [Char], cell: [Char], acc: [String]) : [String] = match cs {
+  [] -> list.reverse([string.from_chars(list.reverse(cell)), ...acc])
+  ['\\', p, ...t] -> cut_cells(t, [p, '\\', ...cell], acc)
+  [c, ...t] ->
+    if c == '|' {
+      cut_cells(t, [], [string.from_chars(list.reverse(cell)), ...acc])
+    } else {
+      cut_cells(t, [c, ...cell], acc)
+    }
+}
 
 # ---- Paragraphs ----
 

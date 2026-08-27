@@ -14,8 +14,8 @@ scanner, theme, ANSI renderer and paging over terevaka, with 53 tests and 2 prop
 checks green. What is missing is the **file finder** (`mark/finder.kai` over
 `fs.dir.walk`): with no arguments `mark` prints the help, and that is where it would go.
 
-Deliberately out of scope: **tables** (the parser treats them as paragraphs) and automatic
-light/dark background detection via OSC 11 — `--style` settles it by hand.
+Deliberately out of scope: automatic light/dark background detection via OSC 11 —
+`--style` settles it by hand.
 
 **When it pages:** only with a terminal on the output and a document that does not fit in
 it. Never when the input came from stdin — the pager reads its keys from that same
@@ -105,14 +105,17 @@ argv/stdin/file            parse           render             output
 - `mark/cli.kai` — arguments to `Opts` (`source`, `width`, `style`, `color`, `pager`), a
   pure function over `[String]`. What depends on the environment is left unset
   (`width == 0`, `style == "auto"`) for `main` to resolve.
-- `mark/ast.kai` — blocks (heading, paragraph, list, code fence, quote, rule) and inline
-  (emphasis, code, link).
+- `mark/ast.kai` — blocks (heading, paragraph, list, code fence, quote, table, rule) and
+  inline (emphasis, code, link).
 - `mark/parser.kai` — `String -> [Block]`. Containers de-indent their lines and re-enter
   `blocks`, so nesting falls out of the recursion. Two shapes are decided by position
   rather than by prefix, and both live where the ambiguity is: a setext underline is
   recognised inside `take_para`, since `---` is a rule standing alone and a heading with a
   paragraph above it; and indented code goes **first** in `block_at`'s recogniser list,
-  because every other recogniser trims the indent away before it looks at the line.
+  because every other recogniser trims the indent away before it looks at the line. A
+  table is the third: it is two lines before it is one, and the delimiter row must carry a
+  pipe of its own — otherwise `Title` over `-----` opens a one-column table instead of the
+  setext heading it is.
 - `mark/inline.kai` — the text of a line to `[Inline]`. An unclosed delimiter **degrades
   to literal text**: ambiguity never loses content.
 - `mark/render.kai` — `[Block] -> [String]` with ANSI, at a given width.
@@ -202,11 +205,12 @@ Every one of these cost a compile cycle here; do not repeat them.
   in '...' spread`. On a sum type it does not. `cli.Opts` goes without `derive` because of
   this; `pager.Model` keeps the derive and spells its fields out one by one.
   ([kaikai#1719](https://github.com/lnds/kaikai/issues/1719))
-- **A private type name captures the name package-wide.** A `type Step` local to one
-  module made `terevaka.app`'s `pub type Step[m]` unreachable from another module that
-  never mentions it — and qualifying as `app.Step` does not help. Any local `type State` or
-  `type Config` can silently break a dependency's type; the diagnostic points elsewhere and
-  never mentions the collision.
+- **A private name captures the name package-wide — types and functions alike.** A `type
+  Step` local to one module made `terevaka.app`'s `pub type Step[m]` unreachable from
+  another module that never mentions it, and qualifying as `app.Step` does not help. The
+  same goes for `fn`: a private `fits` added to `mark/render.kai` collided with an
+  unrelated private `fits` in `tests/props_test.kai`, and the error — `wrong number of
+  arguments to fits` — named neither the other file nor the collision.
   ([kaikai#1726](https://github.com/lnds/kaikai/issues/1726))
 - **Match arms on one line are separated by `;`, not `,`.** A comma gives `expected
   pattern`.

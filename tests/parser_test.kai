@@ -83,6 +83,43 @@ test "a list interrupts the preceding paragraph with no blank line" {
   assert mixed == [Para([Text("text")]), Bullets([[Para([Text("item")])]])]
 }
 
+test "tables: the delimiter row is what makes one" {
+  let t = parser.parse("| a | b |\n|---|---|\n| 1 | 2 |")
+  assert t == [Table([[Text("a")], [Text("b")]],
+                     [AlignLeft, AlignLeft],
+                     [[[Text("1")], [Text("2")]]])]
+  # The outer pipes are optional, and the cells are trimmed either way.
+  assert parser.parse("a | b\n--|--\n1 | 2") == t
+  # A header with no delimiter under it is a paragraph, pipes and all.
+  assert parser.parse("| a | b |") == [Para([Text("| a | b |")])]
+  # So is a delimiter row whose column count disagrees with the header.
+  let ragged = parser.parse("| a | b |\n|---|")
+  assert ragged == [Para([Text("| a | b | |---|")])]
+}
+
+test "tables: alignment, ragged rows and escaped pipes" {
+  let head = [[Text("a")], [Text("b")], [Text("c")]]
+  assert parser.parse("| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |") ==
+    [Table(head, [AlignLeft, AlignCenter, AlignRight],
+           [[[Text("1")], [Text("2")], [Text("3")]]])]
+
+  # A short row is filled out and a long one is cut, so every row has
+  # exactly the columns the header declared.
+  assert parser.parse("| a | b |\n|---|---|\n| 1 |\n| 1 | 2 | 3 |") ==
+    [Table([[Text("a")], [Text("b")]], [AlignLeft, AlignLeft],
+           [[[Text("1")], []], [[Text("1")], [Text("2")]]])]
+
+  # An escaped pipe stays inside its cell and loses the backslash.
+  assert parser.parse("| a | b |\n|---|---|\n| x \\| y | 2 |") ==
+    [Table([[Text("a")], [Text("b")]], [AlignLeft, AlignLeft],
+           [[[Text("x | y")], [Text("2")]]])]
+}
+
+test "a setext underline does not open a one-column table" {
+  assert parser.parse("Title\n-----") == [Heading(2, [Text("Title")])]
+  assert parser.parse("Title\n:---:") == [Para([Text("Title :---:")])]
+}
+
 test "blocks carry their content already scanned into inline nodes" {
   assert parser.parse("# A *title*") == [Heading(1, [Text("A "), Emph([Text("title")])])]
   let quoted = parser.parse("> with `code`")

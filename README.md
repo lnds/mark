@@ -120,11 +120,15 @@ file, off when `NO_COLOR` is set, and whatever `--color` says over all of it.
 
 Headings — both `#` and the underlined setext form — paragraphs with word
 wrapping, code both fenced and indented four spaces, nested quotes, bullet and
-ordered lists with sublists, horizontal rules; and inline: emphasis, strong,
-code spans, links (with the destination shown, since a terminal has nowhere to
-hide it) and backslash escapes.
+ordered lists with sublists, tables, horizontal rules; and inline: emphasis,
+strong, code spans, links (with the destination shown, since a terminal has
+nowhere to hide it) and backslash escapes.
 
-Tables are out of scope for now — the parser treats them as paragraphs.
+Tables are drawn with a box-drawing frame and honour the alignments the
+delimiter row declares (`:--`, `:-:`, `--:`). A table too wide for the terminal
+is squeezed rather than cut off: the columns share the space that is left, the
+ones that already fitted keep their width, and text that no longer fits its
+column wraps inside the cell instead of being dropped.
 
 ## Design
 
