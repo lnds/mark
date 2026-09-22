@@ -1,6 +1,5 @@
 import mark.parser
 import mark.ast
-import core.list as list
 
 test "a realistic document: no panic, and the blocks come out in order" {
   let doc = """# Title
@@ -29,13 +28,13 @@ make all
 The end."""
   let bs = parser.parse(doc)
   assert bs.length() == 9
-  assert list.nth(bs, 0) == Some(Heading(1, [Text("Title")]))
-  assert list.nth(bs, 1) == Some(Para([Text("A paragraph spread over several adjacent lines.")]))
-  assert list.nth(bs, 2) == Some(Heading(2, [Text("Section")]))
-  assert list.nth(bs, 5) == Some(Quote([Para([Text("a quote over two lines")])]))
-  assert list.nth(bs, 6) == Some(Code("sh", ["make all"]))
-  assert list.nth(bs, 7) == Some(Rule)
-  assert list.nth(bs, 8) == Some(Para([Text("The end.")]))
+  assert nth(bs, 0) == Some(Heading(1, [Text("Title")]))
+  assert nth(bs, 1) == Some(Para([Text("A paragraph spread over several adjacent lines.")]))
+  assert nth(bs, 2) == Some(Heading(2, [Text("Section")]))
+  assert nth(bs, 5) == Some(Quote([Para([Text("a quote over two lines")])]))
+  assert nth(bs, 6) == Some(Code("sh", ["make all"]))
+  assert nth(bs, 7) == Some(Rule)
+  assert nth(bs, 8) == Some(Para([Text("The end.")]))
 }
 
 fn main() : Int = 0

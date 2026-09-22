@@ -42,8 +42,8 @@ test "a bad argument becomes the error to report" {
   assert cli.parse_args(["-z"]).source == Invalid("unknown option: -z")
   assert cli.parse_args(["-w", "x"]).source == Invalid("width is not a number: x")
   assert cli.parse_args(["-w", "0"]).source == Invalid("width must be positive: 0")
-  assert cli.parse_args(["-s", "blue"]).source ==
-    Invalid("unknown style: blue (dark|light|auto)")
+  assert cli.parse_args(["-s", "blue"]).source
+    == Invalid("unknown style: blue (dark|light|auto)")
 }
 
 fn main() : Int = 0

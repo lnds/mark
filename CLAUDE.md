@@ -24,6 +24,9 @@ descriptor, which by then is exhausted, leaving it no way to be told to quit. `-
 
 ## Commands
 
+The toolchain this tree is verified against is **kai 0.121.0**; the sources need at least
+it, since `pager.Model` now uses the `{ ...m }` spread on a `#[derive]` record.
+
 `kai build .` is enough — **nothing in the build is load-bearing on `make` any more**.
 terevaka declares its terminal shim in its own manifest (`[native]`, needs kai 0.112+), so
 the driver compiles and links it for `build`, `run`, `test` and `install`, transitively.
@@ -51,7 +54,7 @@ make run
 make test         # kai test . (root package plus each file in tests/)
 make check        # property checks, file by file
 make lint         # kai lint .
-make fmt          # canonical formatting, file by file
+make fmt          # kai fmt . (canonical formatting, whole package)
 make fmt-check    # names the files that are not formatted, without touching them
 make deps         # kai fetch (regenerates kai.lock from kai.toml)
 make clean
@@ -85,6 +88,15 @@ or Haskell**. The tooling exists for this and is cheaper than reading sources:
 
 For the unknown, write a typed hole `?` and let the compiler tell you the expected type
 and what is in scope: `kai build --holes <file>`.
+
+**The `core/*` modules are auto-loaded** — `core/list`, `core/string`, `core/char`,
+`core/option`, `core/result`, `core/tuple`, plus `protocols`, `effects` and `array` (the
+full set is in `kai info builtins`). Importing them is noise: write `reverse(xs)`,
+`trim(s)`, `xs.length()`. Their module names stay in scope too, so `list.repeat("", n)`
+and `string.length(s)` work with no import — which is how a name that both modules own
+gets disambiguated. Only the modules outside that set are imported: here `text`,
+`math/int` and `terevaka.*`. Note `kai doc` spells the paths with a slash
+(`kai doc core/list.foldl`), not the dot the `import` form uses.
 
 The language moves fast: **verify before assuming something is absent** just because this
 file called it absent under an older version.
@@ -164,7 +176,7 @@ skips the inline scanner and the wrap) isolates how much of it belongs to the pa
 ## terevaka: the TUI layer
 
 `terevaka` (github.com/kaikailang-org/terevaka, pinned by sha in `kai.lock`) is the
-ecosystem's TUI framework. Verified: compiles and runs with kai 0.113.0. The pin is a
+ecosystem's TUI framework. Verified: compiles and runs with kai 0.121.0. The pin is a
 `main` sha past the v0.1.4 tag, for the still-unreleased commit that moved the C shim into
 the manifest's `[native]` table; `kai.lock` keeps the build reproducible regardless.
 
@@ -201,10 +213,6 @@ which is what the status bar needs.
 
 Every one of these cost a compile cycle here; do not repeat them.
 
-- **`#[derive(...)]` on a *record* breaks the `{ ...o }` spread** — `unknown record type X
-  in '...' spread`. On a sum type it does not. `cli.Opts` goes without `derive` because of
-  this; `pager.Model` keeps the derive and spells its fields out one by one.
-  ([kaikai#1719](https://github.com/lnds/kaikai/issues/1719))
 - **A private name captures the name package-wide — types and functions alike.** A `type
   Step` local to one module made `terevaka.app`'s `pub type Step[m]` unreachable from
   another module that never mentions it, and qualifying as `app.Step` does not help. The
@@ -230,15 +238,19 @@ Every one of these cost a compile cycle here; do not repeat them.
   `File.read_file(path)` returns `Result[String, String]`.
 - **A package importing `terevaka.ui` runs terevaka's tests too.** A red line there is not
   necessarily this project's — check whose file it is before chasing it.
-- **`kai fmt .` formats the entry point and nothing else.** It walks no further into the
-  package, and exits 0 as though it had — so a tree it calls clean can be entirely
-  unformatted. `make fmt` and `make fmt-check` loop over the files one by one for the same
-  reason `make check` does. Verified on 0.113.0: mangling `mark/theme.kai` and running
-  `kai fmt .` leaves the damage untouched.
-- **`kai fmt` inserts a blank line between consecutive imports.** Not a style choice to
-  adopt: kaikai's own self-hosted sources hold 1368 adjacent import pairs across 152 files,
-  which the formatter would rewrite. This is why the tree is deliberately left unformatted
-  under 0.113.0 — running `make fmt` today spreads the import blocks apart in all 16 files.
+- **The bare name is greedy, and `string` wins over `list`.** `repeat`, `length`, `slice`
+  and their neighbours name both a string and a list function, and unqualified
+  `repeat("", n)` resolves to `string.repeat` — it yields `""`, never `[String]`, and a
+  `let` annotation does not steer it back. The fix is to say which one: **the module name
+  is in scope without importing anything**, so `list.repeat("", n)` and `list.length(xs)`
+  work as written, auto-loaded or not. `xs.length()` by UFCS does too.
+- **Importing `math/int` takes over the bare `max`/`min`.** `int.max(a, b)` and
+  `list.max(xs) : Option` collide on the unqualified name and the import wins, so `max(xs)`
+  fails with `int.max expects 2 arguments`. Same remedy: `render.max_of` says
+  `list.max(xs).unwrap_or(0)`.
+- **A continuation line may not begin with `.`.** Binary operators do continue an
+  expression from the start of a line; a UFCS chain does not, and `\n  .contains(c)` is a
+  parse error at the dot. Break such a chain inside its parentheses, not before the dot.
 
 Traps that **no longer are** (they were here, and were fixed upstream; do not assume them
 current if you read older code): the `Int` from `main` is the exit code, binary operators
@@ -246,7 +258,13 @@ do continue an expression from the start of a line, `string.trim_left`/`trim_rig
 `string.from_chars` exist, `pub const` does cross the module boundary, `Stdout.is_tty()`
 removed the need for a hand-written `isatty` shim, `kai lint` no longer reports
 `#[derive]` impls as dead code, and terevaka's shim no longer travels in `CFLAGS` — it is
-declared in its manifest's `[native]` table.
+declared in its manifest's `[native]` table. Two more closed between 0.113 and 0.121:
+`#[derive]` on a record no longer breaks the `{ ...o }` spread
+([kaikai#1719](https://github.com/lnds/kaikai/issues/1719)), which is why `pager.scroll`
+spells one field again; and `kai fmt .` now walks the whole package instead of formatting
+only the entry point, and no longer pushes consecutive imports apart — so the tree is
+kept canonically formatted and `make fmt` is just `kai fmt .`. **`kai check .` still does
+not descend into `tests/`**, which is why that target alone still loops file by file.
 
 `pager.kai` used to carry a counter for the last of those: `terevaka.term` reported EOF and
 an undecodable key both as `Key::Unknown`, so a closed descriptor spun the loop at 100% CPU
@@ -257,10 +275,9 @@ their two tests are gone.
 
 **String literals do have unicode escapes**, since
 [kaikai#1720](https://github.com/lnds/kaikai/issues/1720) closed on 2026-08-10. Verified on
-0.113.0: `"\u{1b}"` is a real ESC, `"\u{263A}"` and the astral `"\u{1F600}"` come out as
+0.121.0: `"\u{1b}"` is a real ESC, `"\u{263A}"` and the astral `"\u{1F600}"` come out as
 correct UTF-8, and `"\x1b"` works too. An unknown escape is now a **hard error** naming the
-sequence, not a silently dropped backslash. `theme.esc` still builds ESC with
-`int_to_char(27)`, which is no longer necessary — a plain `"\u{1b}"` would do.
+sequence, not a silently dropped backslash. `theme.esc` builds ESC with it.
 
 The lesson each of those teaches is the same: **this file ages faster than the language**.
 Before working around something it calls missing, spend the thirty seconds to check.

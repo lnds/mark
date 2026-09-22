@@ -4,14 +4,12 @@ touching no environment. `main.kai` hands it `args.argv()` and resolves
 afterwards whatever depends on the terminal (real width, colour).
 """)]
 
-import core.string as string
-
 pub const VERSION : String = "0.2.0"
 
 #[doc("Where the document comes from, already resolved from the arguments.")]
 #[derive(Eq, Show)]
-pub type Source =
-    FromFile(String)
+pub type Source
+  = FromFile(String)
   | FromStdin
   | ShowHelp
   | ShowVersion
@@ -27,7 +25,7 @@ pub type Opts = {
   width: Int,
   style: String,
   color: String,
-  pager: String,
+  pager: String
 }
 
 fn defaults() : Opts =
@@ -35,7 +33,7 @@ fn defaults() : Opts =
 
 pub fn parse_args(argv: [String]) : Opts = match argv {
   [] -> defaults()
-  _  -> walk(argv, Opts { ...defaults(), source: FromStdin })
+  _ -> walk(argv, Opts { ...defaults(), source: FromStdin })
 }
 
 # The first bare argument fixes the source and later ones are ignored,
@@ -44,25 +42,22 @@ fn walk(argv: [String], o: Opts) : Opts = match o.source {
   Invalid(_) -> o
   _ -> match argv {
     [] -> o
-    ["-h", ...t]        -> walk(t, Opts { ...o, source: ShowHelp })
-    ["--help", ...t]    -> walk(t, Opts { ...o, source: ShowHelp })
-    ["-v", ...t]        -> walk(t, Opts { ...o, source: ShowVersion })
+    ["-h", ...t] -> walk(t, Opts { ...o, source: ShowHelp })
+    ["--help", ...t] -> walk(t, Opts { ...o, source: ShowHelp })
+    ["-v", ...t] -> walk(t, Opts { ...o, source: ShowVersion })
     ["--version", ...t] -> walk(t, Opts { ...o, source: ShowVersion })
-    ["-", ...t]         -> walk(t, Opts { ...o, source: FromStdin })
-
-    ["-w", n, ...t]      -> walk(t, with_width(o, n))
+    ["-", ...t] -> walk(t, Opts { ...o, source: FromStdin })
+    ["-w", n, ...t] -> walk(t, with_width(o, n))
     ["--width", n, ...t] -> walk(t, with_width(o, n))
-    ["-s", s, ...t]      -> walk(t, with_style(o, s))
+    ["-s", s, ...t] -> walk(t, with_style(o, s))
     ["--style", s, ...t] -> walk(t, with_style(o, s))
     ["--color", c, ...t] -> walk(t, with_color(o, c))
-
-    ["-p", ...t]         -> walk(t, Opts { ...o, pager: "always" })
-    ["--pager", ...t]    -> walk(t, Opts { ...o, pager: "always" })
-    ["-P", ...t]         -> walk(t, Opts { ...o, pager: "never" })
+    ["-p", ...t] -> walk(t, Opts { ...o, pager: "always" })
+    ["--pager", ...t] -> walk(t, Opts { ...o, pager: "always" })
+    ["-P", ...t] -> walk(t, Opts { ...o, pager: "never" })
     ["--no-pager", ...t] -> walk(t, Opts { ...o, pager: "never" })
-
     [a, ...t] ->
-      if string.starts_with(a, "-") and a != "-" {
+      if starts_with(a, "-") and a != "-" {
         Opts { ...o, source: Invalid("unknown option: #{a}") }
       } else {
         walk(t, first_file(o, a))
@@ -72,13 +67,16 @@ fn walk(argv: [String], o: Opts) : Opts = match o.source {
 
 fn first_file(o: Opts, path: String) : Opts = match o.source {
   FromStdin -> Opts { ...o, source: FromFile(path) }
-  _         -> o
+  _ -> o
 }
 
-fn with_width(o: Opts, n: String) : Opts = match string.to_int(n) {
+fn with_width(o: Opts, n: String) : Opts = match to_int(n) {
   Some(w) ->
-    if w > 0 { Opts { ...o, width: w } }
-    else { Opts { ...o, source: Invalid("width must be positive: #{n}") } }
+    if w > 0 {
+      Opts { ...o, width: w }
+    } else {
+      Opts { ...o, source: Invalid("width must be positive: #{n}") }
+    }
   None -> Opts { ...o, source: Invalid("width is not a number: #{n}") }
 }
 

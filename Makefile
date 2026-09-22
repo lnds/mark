@@ -88,13 +88,12 @@ check:
 lint:
 	$(KAI_BIN) lint .
 
-# `kai fmt .` formats the entry point and nothing else, exiting 0 as if
-# it had done the package: the files go one by one here too.
+# Unlike `kai check`, `kai fmt` does walk the whole package.
 fmt:
-	@for f in main.kai mark/*.kai tests/*.kai; do $(KAI_BIN) fmt $$f; done
+	$(KAI_BIN) fmt .
 
 fmt-check:
-	@for f in main.kai mark/*.kai tests/*.kai; do $(KAI_BIN) fmt --check $$f >/dev/null || echo "unformatted: $$f"; done
+	$(KAI_BIN) fmt --check .
 
 clean:
 	rm -rf $(BUILD)

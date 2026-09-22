@@ -10,8 +10,8 @@ markup. The block phase produces only `Text`; the inline scanner
 replaces those nodes with the tree of emphasis, code and links.
 """)]
 #[derive(Eq, Show)]
-pub type Inline =
-    Text(String)
+pub type Inline
+  = Text(String)
   | Emph([Inline])
   | Strong([Inline])
   | CodeSpan(String)
@@ -37,8 +37,8 @@ renderer never has to ask whether a row is ragged. A cell is `[Inline]`
 like any other text: emphasis and links work inside one.
 """)]
 #[derive(Eq, Show)]
-pub type Block =
-    Heading(Int, [Inline])
+pub type Block
+  = Heading(Int, [Inline])
   | Para([Inline])
   | Code(String, [String])
   | Quote([Block])

@@ -11,8 +11,7 @@ does not measure them again: cutting them by columns would split an
 escape sequence. The renderer is what already fitted them to the width.
 """)]
 
-import core.list as list
-import core.string as string
+import math.int
 import terevaka.app
 import terevaka.term
 import terevaka.ui
@@ -26,11 +25,11 @@ pub type Model = {
   lines: [String],
   top: Int,
   height: Int,
-  name: String,
+  name: String
 }
 
 pub fn model(lines: [String], rows: Int, name: String) : Model =
-  Model { lines: lines, top: 0, height: max_int(rows - 1, 1), name: name }
+  Model { lines: lines, top: 0, height: int.max(rows - 1, 1), name: name }
 
 #[doc("""
 Columns and rows the terevaka frame keeps for itself.
@@ -43,21 +42,13 @@ Subtracting it is not cosmetic — it is what keeps the repaint in place.
 """)]
 pub fn margin() : Int = 3
 
-# The fields are repeated one by one instead of using the `{ ...m }`
-# spread: the spread does not resolve the type of a record carrying
-# `#[derive]`, and here the derived `Eq` is what makes models comparable
-# in the tests.
 #[doc("Moves the window `delta` lines, without leaving the document.")]
-pub fn scroll(m: Model, delta: Int) : Model = Model {
-  lines: m.lines,
-  top: clamp(m.top + delta, 0, last_top(m)),
-  height: m.height,
-  name: m.name,
-}
+pub fn scroll(m: Model, delta: Int) : Model =
+  Model { ...m, top: clamp(m.top + delta, 0, last_top(m)) }
 
 #[doc("The visible lines, padded out to the height of the window.")]
-pub fn viewport(m: Model) : [String] = {
-  let shown = list.take(list.drop(m.lines, m.top), m.height)
+pub fn viewport(m: Model) : [String] {
+  let shown = take(drop(m.lines, m.top), m.height)
   shown ++ list.repeat("", m.height - shown.length())
 }
 
@@ -65,8 +56,8 @@ pub fn viewport(m: Model) : [String] = {
 The status bar: name, position and the keys. It is cut to the width so
 it can never push the body up by a row.
 """)]
-pub fn status(m: Model, width: Int) : String = {
-  let last = min_int(m.top + m.height, m.lines.length())
+pub fn status(m: Model, width: Int) : String {
+  let last = int.min(m.top + m.height, m.lines.length())
   let left = "#{m.name}  #{last}/#{m.lines.length()}  #{percent(m)}%"
   let keys = "j/k up/down scroll · space/b page · g/G ends · q quit"
   ui.cell(fit_both(left, keys, width), width)
@@ -74,58 +65,56 @@ pub fn status(m: Model, width: Int) : String = {
 
 # The scroll ceiling: the last line ends up at the foot, never in the
 # middle of a half-empty screen.
-fn last_top(m: Model) : Int = max_int(m.lines.length() - m.height, 0)
+fn last_top(m: Model) : Int = int.max(m.lines.length() - m.height, 0)
 
 fn percent(m: Model) : Int =
-  if last_top(m) == 0 { 100 } else { (m.top * 100) / last_top(m) }
+  if last_top(m) == 0 { 100 } else { m.top * 100 / last_top(m) }
 
 # With room to spare the keys align right; otherwise they are dropped
 # rather than letting the bar spill onto the next line.
-fn fit_both(left: String, keys: String, width: Int) : String = {
+fn fit_both(left: String, keys: String, width: Int) : String {
   let gap = width - ui.visible_len(left) - ui.visible_len(keys) - 2
-  if gap >= 0 { "#{left}#{string.repeat(" ", gap + 2)}#{keys}" } else { left }
+  if gap >= 0 { "#{left}#{repeat(" ", gap + 2)}#{keys}" } else { left }
 }
 
 #[doc("Turns a key into a step of the model; `None` means quit.")]
 pub fn step(m: Model, k: term.Key) : Option[Model] = match k {
   Printable('q') -> None
-  Esc            -> None
+  Esc -> None
   Printable('j') -> Some(scroll(m, 1))
-  Down           -> Some(scroll(m, 1))
-  Enter          -> Some(scroll(m, 1))
+  Down -> Some(scroll(m, 1))
+  Enter -> Some(scroll(m, 1))
   Printable('k') -> Some(scroll(m, 0 - 1))
-  Up             -> Some(scroll(m, 0 - 1))
+  Up -> Some(scroll(m, 0 - 1))
   Printable(' ') -> Some(scroll(m, m.height))
   Printable('f') -> Some(scroll(m, m.height))
   Printable('b') -> Some(scroll(m, 0 - m.height))
   Printable('d') -> Some(scroll(m, m.height / 2))
-  Printable('u') -> Some(scroll(m, 0 - (m.height / 2)))
+  Printable('u') -> Some(scroll(m, 0 - m.height / 2))
   Printable('g') -> Some(scroll(m, 0 - m.lines.length()))
   Printable('G') -> Some(scroll(m, m.lines.length()))
-  _              -> Some(scroll(m, 0))
+  _ -> Some(scroll(m, 0))
 }
 
 #[doc("""
 Document rows that fit a terminal of `rows` rows: one goes to the
 frame's top margin and another to the status bar.
 """)]
-pub fn body_rows(rows: Int) : Int = max_int(rows - 2, 1)
+pub fn body_rows(rows: Int) : Int = int.max(rows - 2, 1)
 
 #[doc("Opens the pager and does not return until it is exited.")]
-pub fn run(lines: [String], name: String) : Unit / Ffi = {
+pub fn run(lines: [String], name: String) : Unit / Ffi {
   let m = model(lines, body_rows(term.rows()) + 1, name)
   let width = term.cols() - margin()
   app.run(
     m,
     (mm, k) => match step(mm, k) {
       Some(next) -> app.keep(next)
-      None       -> app.quit()
+      None -> app.quit()
     },
-    (mm) => ui.col((viewport(mm) | ui.text) ++ [ui.text(status(mm, width))]),
-    120,
+    mm => ui.col((viewport(mm) | ui.text) ++ [ui.text(status(mm, width))]),
+    120
   )
 }
 
-fn clamp(v: Int, lo: Int, hi: Int) : Int = max_int(lo, min_int(v, hi))
-fn max_int(a: Int, b: Int) : Int = if a > b { a } else { b }
-fn min_int(a: Int, b: Int) : Int = if a < b { a } else { b }
+fn clamp(v: Int, lo: Int, hi: Int) : Int = int.max(lo, int.min(v, hi))

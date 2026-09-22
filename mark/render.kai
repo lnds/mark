@@ -12,9 +12,8 @@ loop copies the accumulator every step, which makes rendering quadratic
 in the length of a paragraph rather than linear.
 """)]
 
-import core.string as string
-import core.list as list
 import text
+import math.int
 import mark.ast
 import mark.theme
 
@@ -23,7 +22,7 @@ pub fn min_width() : Int = 20
 
 #[doc("Renders the document to lines ready to be written out.")]
 pub fn render(th: theme.Theme, width: Int, bs: [ast.Block]) : [String] =
-  list.reverse(blocks(th, max_int(width, min_width()), bs, []))
+  reverse(blocks(th, int.max(width, min_width()), bs, []))
 
 # A codepoint with its style: the intermediate representation that
 # allows measuring without counting the ANSI codes.
@@ -36,36 +35,29 @@ fn blocks(th: theme.Theme, width: Int, bs: [ast.Block], acc: [String]) : [String
     [b, ...rest] -> {
       let ls = block(th, width, b)
       let sep = if acc.is_empty() or ls.is_empty() { [] } else { [""] }
-      blocks(th, width, rest, list.reverse(ls) ++ sep ++ acc)
+      blocks(th, width, rest, reverse(ls) ++ sep ++ acc)
     }
   }
 
 fn block(th: theme.Theme, width: Int, b: ast.Block) : [String] = match b {
-  Rule -> [paint_all(th.rule, string.repeat("─", width), th.reset)]
-
+  Rule -> [paint_all(th.rule, repeat("─", width), th.reset)]
   # The level travels as the source `#`: it survives copy-paste and does
   # not depend on the terminal telling the shades apart.
   Heading(n, xs) ->
-    lay(th, width, string.repeat("#", n) ++ " ", th.heading, styled(th, xs, th.heading))
-
+    lay(th, width, repeat("#", n) ++ " ", th.heading, styled(th, xs, th.heading))
   Para(xs) -> lay(th, width, "", "", styled(th, xs, ""))
-
   # A fence body is literal: it gets indented but never wrapped, because
   # breaking a line of code changes what it says.
-  Code(_, ls) -> ls | ((l) => paint_all(th.code, "  " ++ l, th.reset))
-
+  Code(_, ls) -> ls | (l => paint_all(th.code, "  " ++ l, th.reset))
   Quote(inner) ->
     indent(paint_all(th.quote, "│ ", th.reset), 2, block_list(th, width - 2, inner))
-
   Bullets(items) -> items
-    || ((it) => item(th, width, paint_all(th.marker, "• ", th.reset), 2, it))
-
-  Ordered(start, items) -> list.enumerate(items)
-    || ((p) => {
+    || (it => item(th, width, paint_all(th.marker, "• ", th.reset), 2, it))
+  Ordered(start, items) -> enumerate(items)
+    || (p => {
       let label = "#{start + p.fst}. "
       item(th, width, paint_all(th.marker, label, th.reset), label.length(), p.snd)
     })
-
   Table(head, aligns, body) -> table(th, width, head, aligns, body)
 }
 
@@ -81,16 +73,16 @@ fn table(
   width: Int,
   head: [[ast.Inline]],
   aligns: [ast.Align],
-  body: [[[ast.Inline]]],
-) : [String] = {
-  let head_cells = head | ((c) => styled(th, c, th.strong))
-  let body_cells = body | ((r) => styled_row(th, r))
+  body: [[[ast.Inline]]]
+) : [String] {
+  let head_cells = head | (c => styled(th, c, th.strong))
+  let body_cells = body | (r => styled_row(th, r))
   let cols = fit_cols(natural(head_cells, body_cells), width - frame_width(aligns.length()))
   let bar = (l, mid, r) => paint_all(th.rule, edge(l, mid, r, cols), th.reset)
   [bar("┌", "┬", "┐")]
     ++ row(th, head_cells, cols, aligns)
     ++ [bar("├", "┼", "┤")]
-    ++ (body_cells || ((r) => row(th, r, cols, aligns)))
+    ++ (body_cells || (r => row(th, r, cols, aligns)))
     ++ [bar("└", "┴", "┘")]
 }
 
@@ -100,10 +92,10 @@ fn frame_width(n: Int) : Int = 3 * n + 1
 
 # The width each column would take if nothing constrained it.
 fn natural(head: [[Cell]], body: [[[Cell]]]) : [Int] =
-  list.enumerate(head) | ((p) => max_int(cells_width(p.snd), col_width(body, p.fst)))
+  enumerate(head) | (p => int.max(cells_width(p.snd), col_width(body, p.fst)))
 
 fn col_width(body: [[[Cell]]], i: Int) : Int =
-  max_of(body | ((r) => cells_width(nth_line(r, i))))
+  max_of(body | (r => cells_width(nth_line(r, i))))
 
 # Over budget the columns are trimmed to a common ceiling rather than
 # in proportion to what each asked for. A narrow column that already
@@ -111,42 +103,51 @@ fn col_width(body: [[[Cell]]], i: Int) : Int =
 # anything up: cutting proportionally would shave `Module` down to five
 # columns to pay for a long neighbour that is still too long anyway.
 fn fit_cols(nat: [Int], avail: Int) : [Int] =
-  if list.sum(nat) <= avail or avail <= 0 { nat }
-  else { nat | ((w) => max_int(min_int(w, ceiling(nat, avail, 1, 1)), 1)) }
+  if sum(nat) <= avail or avail <= 0 {
+    nat
+  } else {
+    nat | (w => int.max(int.min(w, ceiling(nat, avail, 1, 1)), 1))
+  }
 
 # The highest ceiling under which every column, trimmed to it, still
 # fits the budget.
 fn ceiling(nat: [Int], avail: Int, c: Int, best: Int) : Int =
-  if c > max_of(nat) { best }
-  else if capped(nat, c) <= avail { ceiling(nat, avail, c + 1, c) }
-  else { best }
+  if c > max_of(nat) {
+    best
+  } else if capped(nat, c) <= avail {
+    ceiling(nat, avail, c + 1, c)
+  } else {
+    best
+  }
 
-fn capped(nat: [Int], c: Int) : Int = list.sum(nat | ((w) => min_int(w, c)))
+fn capped(nat: [Int], c: Int) : Int = sum(nat | (w => int.min(w, c)))
 
 # One source row, which is as many output lines as its tallest cell:
 # the others are padded with blanks so the frame stays rectangular.
-fn row(th: theme.Theme, cells: [[Cell]], cols: [Int], aligns: [ast.Align]) : [String] = {
-  let wrapped = list.zip(cells, cols) | ((p) => wrap_cell(p.fst, p.snd))
+fn row(th: theme.Theme, cells: [[Cell]], cols: [Int], aligns: [ast.Align]) : [String] {
+  let wrapped = zip(cells, cols) | (p => wrap_cell(p.fst, p.snd))
   let bar = paint_all(th.rule, "│", th.reset)
-  range(max_of(wrapped | ((w) => list.length(w)))) | ((i) => bar ++ row_line(th, wrapped, cols, aligns, bar, i))
+  [0..(max_of(wrapped | (.length())) - 1)]
+    | (i => bar ++ row_line(th, wrapped, cols, aligns, bar, i))
 }
 
-fn styled_row(th: theme.Theme, r: [[ast.Inline]]) : [[Cell]] = r | ((c) => styled(th, c, ""))
+fn styled_row(th: theme.Theme, r: [[ast.Inline]]) : [[Cell]] = r | (c => styled(th, c, ""))
 
 # `wrap` lets a word wider than the margin out whole rather than
 # splitting it, which is right for a paragraph and wrong here: one long
 # word would reach past its bar and break the grid. Inside a cell the
 # word is cut instead — every character is kept, on the next line.
-fn wrap_cell(cs: [Cell], w: Int) : [[Cell]] = {
-  let col = max_int(w, 1)
-  wrap(cs, col, empty_run(), empty_run(), []) || ((l) => chop(l, col, []))
+fn wrap_cell(cs: [Cell], w: Int) : [[Cell]] {
+  let col = int.max(w, 1)
+  wrap(cs, col, empty_run(), empty_run(), []) || (l => chop(l, col, []))
 }
 
 fn chop(l: [Cell], w: Int, acc: [[Cell]]) : [[Cell]] =
-  if cells_width(l) <= w { list.reverse([l, ...acc]) }
-  else {
-    let n = max_int(fits_in(l, w, 0, 0), 1)
-    chop(list.drop(l, n), w, [list.take(l, n), ...acc])
+  if cells_width(l) <= w {
+    reverse([l, ...acc])
+  } else {
+    let n = int.max(fits_in(l, w, 0, 0), 1)
+    chop(drop(l, n), w, [take(l, n), ...acc])
   }
 
 # How many leading cells fit in `w` columns. A double-width character
@@ -167,49 +168,47 @@ fn row_line(
   cols: [Int],
   aligns: [ast.Align],
   bar: String,
-  i: Int,
+  i: Int
 ) : String =
-  string.join(list.zip3(wrapped, cols, aligns)
-    | ((t) => " #{pad_to(th, nth_line(t.fst, i), t.snd, t.trd)} #{bar}"), "")
+  join(
+    zip3(wrapped, cols, aligns)
+      | (t => " #{pad_to(th, nth_line(t.fst, i), t.snd, t.trd)} #{bar}"),
+    ""
+  )
 
-fn nth_line(lines: [[Cell]], i: Int) : [Cell] = match list.nth(lines, i) {
-  Some(l) -> l
-  None    -> []
-}
+fn nth_line(lines: [[Cell]], i: Int) : [Cell] = nth(lines, i).unwrap_or([])
 
 # The cell painted and then padded out to its column. The padding is
 # never painted: a background colour would run past the text the source
 # actually marked.
-fn pad_to(th: theme.Theme, cs: [Cell], w: Int, a: ast.Align) : String = {
-  let gap = max_int(w - cells_width(cs), 0)
+fn pad_to(th: theme.Theme, cs: [Cell], w: Int, a: ast.Align) : String {
+  let gap = int.max(w - cells_width(cs), 0)
   let body = paint(cs, th.reset)
   match a {
-    AlignLeft   -> body ++ string.repeat(" ", gap)
-    AlignRight  -> string.repeat(" ", gap) ++ body
-    AlignCenter -> string.repeat(" ", gap / 2) ++ body ++ string.repeat(" ", gap - (gap / 2))
+    AlignLeft -> body ++ repeat(" ", gap)
+    AlignRight -> repeat(" ", gap) ++ body
+    AlignCenter -> repeat(" ", gap / 2) ++ body ++ repeat(" ", gap - gap / 2)
   }
 }
 
 fn edge(l: String, mid: String, r: String, cols: [Int]) : String =
-  l ++ string.join(cols | ((w) => string.repeat("─", w + 2)), mid) ++ r
+  l ++ join(cols | (w => repeat("─", w + 2)), mid) ++ r
 
 fn cells_width(cs: [Cell]) : Int =
-  list.sum(cs | ((c) => text.char_width(char_to_int(c.ch))))
+  sum(cs | (c => text.char_width(char_to_int(c.ch))))
 
-fn max_of(xs: [Int]) : Int = match list.max(xs) { Some(m) -> m; None -> 0 }
-
-fn range(n: Int) : [Int] = list.enumerate(list.repeat(0, n)) | ((p) => p.fst)
+fn max_of(xs: [Int]) : Int = list.max(xs).unwrap_or(0)
 
 # The inner floor is about columns, not legibility: `min_width` governs
 # the width the CLI asks for, but a nested container only needs to be
 # guaranteed somewhere to write.
 fn block_list(th: theme.Theme, width: Int, bs: [ast.Block]) : [String] =
-  list.reverse(blocks(th, max_int(width, 4), bs, []))
+  reverse(blocks(th, int.max(width, 4), bs, []))
 
 # A list item: the marker only on the first line, the rest aligned to
 # the column where its text starts.
 fn item(th: theme.Theme, width: Int, marker: String, pad: Int, bs: [ast.Block]) : [String] =
-  indent_first(marker, string.repeat(" ", pad), block_list(th, width - pad, bs))
+  indent_first(marker, repeat(" ", pad), block_list(th, width - pad, bs))
 
 # Wraps the cells and puts the prefix on the first line; the following
 # ones line up with its column.
@@ -218,37 +217,39 @@ fn lay(
   width: Int,
   first: String,
   prefix_style: String,
-  cs: [Cell],
-) : [String] = {
+  cs: [Cell]
+) : [String] {
   let pad = text.display_width(first)
-  let lines = wrap(cs, max_int(width - pad, 4), empty_run(), empty_run(), []) | ((l) => paint(l, th.reset))
+  let lines =
+    wrap(cs, int.max(width - pad, 4), empty_run(), empty_run(), []) | (l => paint(l, th.reset))
   indent(paint_all(prefix_style, first, th.reset), pad, lines)
 }
 
 fn indent(prefix: String, pad: Int, ls: [String]) : [String] =
-  indent_first(prefix, string.repeat(" ", pad), ls)
+  indent_first(prefix, repeat(" ", pad), ls)
 
 fn indent_first(first: String, rest: String, ls: [String]) : [String] =
-  list.enumerate(ls) | ((p) => if p.fst == 0 { first ++ p.snd } else { rest ++ p.snd })
+  enumerate(ls) | (p => if p.fst == 0 { first ++ p.snd } else { rest ++ p.snd })
 
 # ---- Flattening the inline tree ----
 
 # Each node contributes its style to its container's; the result is a
 # flat run of cells, with no nesting left to reconstruct when painting.
 fn styled(th: theme.Theme, xs: [ast.Inline], base: String) : [Cell] =
-  xs || ((x) => match x {
-    Text(s)       -> cells(s, base)
-    Emph(inner)   -> styled(th, inner, base ++ th.emph)
-    Strong(inner) -> styled(th, inner, base ++ th.strong)
-    CodeSpan(s)   -> cells(s, base ++ th.code)
-    # The destination rides along with the label in parentheses: with no
-    # terminal hyperlink, an invisible URL is a lost URL.
-    Link(label, dest) ->
-      styled(th, label, base ++ th.link) ++ cells(" (#{dest})", base ++ th.url)
-  })
+  xs
+    || (x => match x {
+      Text(s) -> cells(s, base)
+      Emph(inner) -> styled(th, inner, base ++ th.emph)
+      Strong(inner) -> styled(th, inner, base ++ th.strong)
+      CodeSpan(s) -> cells(s, base ++ th.code)
+      # The destination rides along with the label in parentheses: with no
+      # terminal hyperlink, an invisible URL is a lost URL.
+      Link(label, dest) ->
+        styled(th, label, base ++ th.link) ++ cells(" (#{dest})", base ++ th.url)
+    })
 
 fn cells(s: String, style: String) : [Cell] =
-  string.chars(s) | ((c) => Cell { ch: c, style: style })
+  chars(s) | (c => Cell { ch: c, style: style })
 
 # ---- Wrapping ----
 
@@ -267,8 +268,9 @@ fn wrap(cs: [Cell], width: Int, line: Run, word: Run, acc: [[Cell]]) : [[Cell]] 
   match cs {
     [] -> {
       let (done, pending) = place(acc, line, word, width)
-      list.reverse(
-        if pending.cells.is_empty() { done } else { [list.reverse(pending.cells), ...done] })
+      reverse(
+        if pending.cells.is_empty() { done } else { [reverse(pending.cells), ...done] }
+      )
     }
     [c, ...t] ->
       if c.ch == ' ' {
@@ -283,13 +285,16 @@ fn grow(r: Run, c: Cell) : Run =
   Run { cells: [c, ...r.cells], width: r.width + text.char_width(char_to_int(c.ch)) }
 
 fn place(acc: [[Cell]], line: Run, word: Run, width: Int) : ([[Cell]], Run) =
-  if word.cells.is_empty() { (acc, line) }
-  else if line.cells.is_empty() { (acc, word) }
-  else if line.width + 1 + word.width <= width {
+  if word.cells.is_empty() {
+    (acc, line)
+  } else if line.cells.is_empty() {
+    (acc, word)
+  } else if line.width + 1 + word.width <= width {
     let sep = Cell { ch: ' ', style: joint_style(line.cells, word.cells) }
     (acc, Run { cells: word.cells ++ [sep] ++ line.cells, width: line.width + 1 + word.width })
+  } else {
+    ([reverse(line.cells), ...acc], word)
   }
-  else { ([list.reverse(line.cells), ...acc], word) }
 
 # The space between two words of the same style joins them, so the run
 # is not closed and reopened at every word. When the style changes it
@@ -298,19 +303,18 @@ fn place(acc: [[Cell]], line: Run, word: Run, width: Int) : ([[Cell]], Run) =
 #
 # Both lists run backwards: the line's last cell is its head, and the
 # word's first cell is its last.
-fn joint_style(line: [Cell], word: [Cell]) : String = {
-  let before = match list.head(line) { Some(c) -> c.style; None -> "" }
-  let after = match list.last(word) { Some(c) -> c.style; None -> "" }
+fn joint_style(line: [Cell], word: [Cell]) : String {
+  let before = head(line).map(.style).unwrap_or("")
+  let after = last(word).map(.style).unwrap_or("")
   if before == after { before } else { "" }
 }
-
 
 # ---- Painting ----
 
 # Emits a code only when the style changes, closing with `reset` before
 # each change so attributes do not accumulate.
 fn paint(cs: [Cell], rst: String) : String =
-  string.join(list.reverse(runs(cs, "", [], [], rst)), "")
+  join(reverse(runs(cs, "", [], [], rst)), "")
 
 # Gathers consecutive cells sharing a style into one run: that is one
 # `from_chars` and one pair of codes per run, rather than a fresh String
@@ -319,21 +323,21 @@ fn runs(cs: [Cell], cur: String, buf: [Char], out: [String], rst: String) : [Str
   match cs {
     [] -> emit(cur, buf, out, rst)
     [c, ...t] ->
-      if c.style == cur { runs(t, cur, [c.ch, ...buf], out, rst) }
-      else { runs(t, c.style, [c.ch], emit(cur, buf, out, rst), rst) }
+      if c.style == cur {
+        runs(t, cur, [c.ch, ...buf], out, rst)
+      } else {
+        runs(t, c.style, [c.ch], emit(cur, buf, out, rst), rst)
+      }
   }
 
 # `out` runs backwards, so a run is pushed as (reset, body, style).
 fn emit(style: String, buf: [Char], out: [String], rst: String) : [String] =
-  if buf.is_empty() { out }
-  else {
-    let body = string.from_chars(list.reverse(buf))
+  if buf.is_empty() {
+    out
+  } else {
+    let body = from_chars(reverse(buf))
     if style == "" { [body, ...out] } else { [rst, body, style, ...out] }
   }
 
 fn paint_all(style: String, s: String, rst: String) : String =
   if style == "" or s == "" { s } else { style ++ s ++ rst }
-
-fn max_int(a: Int, b: Int) : Int = if a > b { a } else { b }
-
-fn min_int(a: Int, b: Int) : Int = if a < b { a } else { b }

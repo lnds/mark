@@ -1,5 +1,3 @@
-import core.list as list
-import core.string as string
 import mark.parser
 import mark.render
 import mark.theme
@@ -9,17 +7,17 @@ import mark.theme
 
 check "no rendered line hides a newline" with s: String {
   render.render(theme.plain(), 40, parser.parse(s))
-    |> ((ls) => list.all(ls, (l) => string.index_of(l, "\n") == None))
+    |> (ls => all(ls, l => index_of(l, "\n") == None))
 }
 
 check "the requested width holds, bar one indivisible word" with s: String {
   render.render(theme.plain(), 40, parser.parse(s))
-    |> ((ls) => list.all(ls, (l) => fits(l, 40)))
+    |> (ls => all(ls, l => fits(l, 40)))
 }
 
 # A word wider than the margin comes out whole rather than split, so a
 # line only exceeds the width when it has nowhere to break.
 fn fits(l: String, width: Int) : Bool =
-  string.length(l) <= width or string.index_of(string.trim(l), " ") == None
+  length(l) <= width or index_of(trim(l), " ") == None
 
 fn main() : Int = 0

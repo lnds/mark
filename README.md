@@ -16,9 +16,9 @@ mark -P doc.md | less    # dump, no pager
 
 ## Install
 
-mark is built from source, so you need the kaikai compiler first — **0.112 or
-later**, the version that reads a dependency's `[native]` table. Either
-installer works; the binary is self-contained and needs no system LLVM:
+mark is built from source, so you need the kaikai compiler first — **0.121 or
+later**, which is what the sources are verified against. Either installer
+works; the binary is self-contained and needs no system LLVM:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/kaikailang-org/kaikai/main/install.sh | sh
@@ -162,7 +162,7 @@ kai typecheck .   # the fast loop: front end only
 make test         # kai test . (root package plus each file in tests/)
 make check        # property checks, file by file
 make lint
-make fmt          # file by file: kai fmt . only formats the entry point
+make fmt          # kai fmt . (canonical formatting, whole package)
 ```
 
 `kai test` on a package that imports `terevaka.ui` also runs terevaka's own test

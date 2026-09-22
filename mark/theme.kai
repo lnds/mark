@@ -22,7 +22,7 @@ pub type Theme = {
   quote: String,
   marker: String,
   rule: String,
-  reset: String,
+  reset: String
 }
 
 #[doc("Theme for a dark background: the default.")]
@@ -36,7 +36,7 @@ pub fn dark() : Theme = Theme {
   quote: "#{esc()}[32m",
   marker: "#{esc()}[35m",
   rule: "#{esc()}[2m",
-  reset: "#{esc()}[0m",
+  reset: "#{esc()}[0m"
 }
 
 #[doc("Theme for a light background: the same roles, in tones that hold up on white.")]
@@ -50,7 +50,7 @@ pub fn light() : Theme = Theme {
   quote: "#{esc()}[36m",
   marker: "#{esc()}[35m",
   rule: "#{esc()}[2m",
-  reset: "#{esc()}[0m",
+  reset: "#{esc()}[0m"
 }
 
 #[doc("Colourless theme: output to a file or a pipe.")]
@@ -64,15 +64,15 @@ pub fn plain() : Theme = Theme {
   quote: "",
   marker: "",
   rule: "",
-  reset: "",
+  reset: ""
 }
 
 #[doc("Resolves a theme by name; anything else falls back to `dark`.")]
 pub fn by_name(name: String) : Theme {
   case "light" -> light()
   case "plain" -> plain()
-  case "none"  -> plain()
-  case _       -> dark()
+  case "none" -> plain()
+  case _ -> dark()
 }
 
 fn esc() : String = "\u{1b}"

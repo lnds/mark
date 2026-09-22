@@ -6,10 +6,9 @@ depends on the terminal (width, colour), hands the text to the pure
 parse -> render pipeline, and writes the result out.
 """)]
 
+import math.int
 import os.args
 import os.env
-import core.string as string
-import core.list as list
 import mark.cli
 import mark.parser
 import mark.render
@@ -20,24 +19,24 @@ import mark.pager
 # Drains stdin line by line to EOF, gathering backwards so the join is
 # the only pass over the whole input.
 fn read_stdin(acc: [String]) : String / Stdin = match Stdin.read_line() {
-  None       -> string.join(list.reverse(acc), "\n")
+  None -> join(reverse(acc), "\n")
   Some(line) -> read_stdin([line, ...acc])
 }
 
 fn load(src: cli.Source) : Result[String, String] / File + Stdin {
-  case ShowHelp     -> Ok(cli.help_text())
-  case ShowVersion  -> Ok("mark #{cli.VERSION}")
-  case FromStdin    -> Ok(read_stdin([]))
-  case FromFile(p)  -> File.read_file(p).map_err((e) => "mark: cannot read #{p}: #{e}")
+  case ShowHelp -> Ok(cli.help_text())
+  case ShowVersion -> Ok("mark #{cli.VERSION}")
+  case FromStdin -> Ok(read_stdin([]))
+  case FromFile(p) -> File.read_file(p).map_err(e => "mark: cannot read #{p}: #{e}")
   case Invalid(msg) -> Err("mark: #{msg}")
 }
 
 # Text that is already the final output — the help, the version — does
 # not go through the renderer: reformatting it would only spoil it.
 fn verbatim(src: cli.Source) : Bool {
-  case ShowHelp    -> true
+  case ShowHelp -> true
   case ShowVersion -> true
-  case _           -> false
+  case _ -> false
 }
 
 # An explicit width always wins; otherwise the terminal's, capped at 80,
@@ -46,10 +45,10 @@ fn verbatim(src: cli.Source) : Bool {
 # With a terminal on the other end the pager's margin is subtracted even
 # when the output ends up dumped: a line that overflows it breaks the
 # repaint, and three columns less in a dump go unnoticed.
-fn width_for(o: cli.Opts) : Int / Ffi + Stdout = {
+fn width_for(o: cli.Opts) : Int / Ffi + Stdout {
   let usable =
     if tty.is_terminal() { tty.columns() - pager.margin() } else { tty.columns() }
-  if o.width > 0 { o.width } else { min_int(usable, 80) }
+  if o.width > 0 { o.width } else { int.min(usable, 80) }
 }
 
 # `--color` overrides everything; `auto` looks at NO_COLOR and then at
@@ -57,16 +56,19 @@ fn width_for(o: cli.Opts) : Int / Ffi + Stdout = {
 # redirections rely on.
 fn colored(o: cli.Opts) : Bool / Env + Stdout = match o.color {
   "always" -> true
-  "never"  -> false
-  _        -> match env.get("NO_COLOR") {
+  "never" -> false
+  _ -> match env.get("NO_COLOR") {
     Some(_) -> false
-    None    -> tty.is_terminal()
+    None -> tty.is_terminal()
   }
 }
 
 fn theme_for(o: cli.Opts) : theme.Theme / Env + Stdout =
-  if colored(o) { theme.by_name(if o.style == "auto" { "dark" } else { o.style }) }
-  else { theme.plain() }
+  if colored(o) {
+    theme.by_name(if o.style == "auto" { "dark" } else { o.style })
+  } else {
+    theme.plain()
+  }
 
 # Paging happens when there is a terminal to page in and the document
 # does not fit in it: dumping a long document loses it in the
@@ -80,21 +82,24 @@ fn paginate(o: cli.Opts, src: cli.Source, lines: Int) : Bool / Ffi + Stdout =
   match src {
     FromStdin -> false
     _ -> match o.pager {
-      "never"  -> false
+      "never" -> false
       "always" -> tty.is_terminal()
-      _        -> tty.is_terminal() and lines > pager.body_rows(tty.rows())
+      _ -> tty.is_terminal() and lines > pager.body_rows(tty.rows())
     }
   }
 
 fn name_of(src: cli.Source) : String {
   case FromFile(p) -> p
-  case _           -> "(stdin)"
+  case _ -> "(stdin)"
 }
 
-fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi = {
+fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi {
   let opts = cli.parse_args(args.argv())
   match load(opts.source) {
-    Err(msg) -> { Stderr.eprint(msg); 1 }
+    Err(msg) -> {
+      Stderr.eprint(msg)
+      1
+    }
     Ok(text) -> {
       if verbatim(opts.source) {
         Stdout.print(text)
@@ -103,12 +108,10 @@ fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi = {
         if paginate(opts, opts.source, lines.length()) {
           pager.run(lines, name_of(opts.source))
         } else {
-          list.foreach(lines, (l) => Stdout.print(l))
+          foreach(lines, l => Stdout.print(l))
         }
       }
       0
     }
   }
 }
-
-fn min_int(a: Int, b: Int) : Int = if a < b { a } else { b }

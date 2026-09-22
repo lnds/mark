@@ -1,9 +1,7 @@
 import mark.pager
-import core.list as list
-import core.string as string
 import terevaka.ui as ui
 
-fn doc(n: Int) : [String] = list.map(list.enumerate(list.repeat("x", n)), (p) => "L#{p.fst}")
+fn doc(n: Int) : [String] = [0..(n - 1)] | (i => "L#{i}")
 
 # 10 lines in a 5-row screen: 4 of body and one of status.
 fn m5() : pager.Model = pager.model(doc(10), 5, "doc.md")
@@ -66,8 +64,8 @@ test "the status bar occupies exactly the width given" {
 test "the keys show up only when there is room to spare" {
   assert pager.status(m5(), 12) == "doc.md  4/1…"
   let wide = pager.status(m5(), 100)
-  assert string.index_of(wide, "q quit") != None
-  assert string.index_of(pager.status(m5(), 40), "q quit") == None
+  assert index_of(wide, "q quit") != None
+  assert index_of(pager.status(m5(), 40), "q quit") == None
 }
 
 fn main() : Int = 0

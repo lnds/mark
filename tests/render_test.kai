@@ -1,10 +1,8 @@
-import core.list as list
 import text
 import mark.render
 import mark.theme
 import mark.parser
 import mark.ast
-import core.string as string
 
 # With the `plain` theme the output is layout alone: line breaking and
 # indentation get checked with no codes in the way.
@@ -42,58 +40,64 @@ test "lists align the continuation under the item text" {
 }
 
 test "the rule spans the requested width" {
-  assert plain("---", 24) == [string.repeat("─", 24)]
+  assert plain("---", 24) == [repeat("─", 24)]
 }
 
 test "a link shows its destination, which would otherwise be lost" {
-  assert plain("[kaikai](https://kaikai-lang.org)", 60) ==
-    ["kaikai (https://kaikai-lang.org)"]
+  assert plain("[kaikai](https://kaikai-lang.org)", 60)
+    == ["kaikai (https://kaikai-lang.org)"]
 }
 
 test "a table draws its frame and honours the alignments" {
-  assert plain("| ab | c |\n|:--|--:|\n| 1 | 22 |", 40) == [
-    "┌────┬────┐",
-    "│ ab │  c │",
-    "├────┼────┤",
-    "│ 1  │ 22 │",
-    "└────┴────┘",
-  ]
+  assert plain("| ab | c |\n|:--|--:|\n| 1 | 22 |", 40)
+    == [
+      "┌────┬────┐",
+      "│ ab │  c │",
+      "├────┼────┤",
+      "│ 1  │ 22 │",
+      "└────┴────┘"
+    ]
 }
 
 test "a table is squeezed into the width rather than overflowing it" {
   # The columns want 12 and 12 plus a 7-column frame; they get 8 each.
-  assert plain("| alpha | beta |\n|---|---|\n| uno dos tres | cuatro cinco |", 24) == [
-    "┌──────────┬──────────┐",
-    "│ alpha    │ beta     │",
-    "├──────────┼──────────┤",
-    "│ uno dos  │ cuatro   │",
-    "│ tres     │ cinco    │",
-    "└──────────┴──────────┘",
-  ]
+  assert plain("| alpha | beta |\n|---|---|\n| uno dos tres | cuatro cinco |", 24)
+    == [
+      "┌──────────┬──────────┐",
+      "│ alpha    │ beta     │",
+      "├──────────┼──────────┤",
+      "│ uno dos  │ cuatro   │",
+      "│ tres     │ cinco    │",
+      "└──────────┴──────────┘"
+    ]
 }
 
 test "every line of a table is the same width, frame included" {
   let out = plain("| a | bbbbbbbbbbbbbbbbbbbb |\n|---|--:|\n| ccc | d |", 30)
-  assert list.all(out, (l) => text.display_width(l) <= 30)
+  assert all(out, l => text.display_width(l) <= 30)
   # A ragged frame is the symptom of measuring text after painting it.
-  assert list.all(out, (l) => text.display_width(l) == text.display_width(head_of(out)))
+  assert all(out, l => text.display_width(l) == text.display_width(head_of(out)))
 }
 
 test "a word wider than its column is cut, never dropped" {
   # `wrap` lets a long word out whole rather than splitting it, which
   # would reach past the bar. In a cell it is cut, and the tail carries
   # on down: no character is lost to make the grid.
-  assert plain("| x |\n|---|\n| abcdefghijklmnopqrst |", 20) == [
-    "┌──────────────────┐",
-    "│ x                │",
-    "├──────────────────┤",
-    "│ abcdefghijklmnop │",
-    "│ qrst             │",
-    "└──────────────────┘",
-  ]
+  assert plain("| x |\n|---|\n| abcdefghijklmnopqrst |", 20)
+    == [
+      "┌──────────────────┐",
+      "│ x                │",
+      "├──────────────────┤",
+      "│ abcdefghijklmnop │",
+      "│ qrst             │",
+      "└──────────────────┘"
+    ]
 }
 
-fn head_of(ls: [String]) : String = match list.head(ls) { Some(l) -> l; None -> "" }
+fn head_of(ls: [String]) : String = match head(ls) {
+  Some(l) -> l
+  None -> ""
+}
 
 test "the theme paints and closes the style" {
   let esc = "\u{1b}"
