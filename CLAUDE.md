@@ -213,13 +213,10 @@ which is what the status bar needs.
 
 Every one of these cost a compile cycle here; do not repeat them.
 
-- **A private `fn` captures the name package-wide, over the auto-loaded `core/*`.** A
-  private `fn starts_with(cs: [Char], m: [Char])` in `mark/inline.kai` takes the name for
-  the whole package, and `mark/parser.kai` — which never mentions it — stops seeing
-  `core/string`'s `starts_with(String, String)`. Every error lands on the innocent file
-  (`expected ([Char], [Char]), found (String, String)`) and none of them names the file
-  that caused it. This is why the scanner's helper is `opens_with`. Before giving a private
-  helper a common name, check `kai info builtins` for it.
+- **A private `fn` takes its name for the whole package, over the auto-loaded `core/*`.**
+  A private `starts_with([Char], [Char])` in `mark/inline.kai` hid `core/string`'s from
+  `mark/parser.kai`, which never mentions it, and every error landed on the parser. Hence
+  `opens_with`. Check `kai info builtins` before giving a private helper a common name.
 - **Match arms on one line are separated by `;`, not `,`.** A comma gives `expected
   pattern`.
 - **`text.char_width` takes an `Int`, not a `Char`** — `char_to_int(c)` first. The error
@@ -238,25 +235,14 @@ Every one of these cost a compile cycle here; do not repeat them.
   `File.read_file(path)` returns `Result[String, String]`.
 - **A package importing `terevaka.ui` runs terevaka's tests too.** A red line there is not
   necessarily this project's — check whose file it is before chasing it.
-- **The bare name is greedy, and `string` wins over `list`.** `repeat`, `length`, `slice`
-  and their neighbours name both a string and a list function, and unqualified
-  `repeat("", n)` resolves to `string.repeat` — it yields `""`, never `[String]`, and a
-  `let` annotation does not steer it back. The fix is to say which one: **the module name
-  is in scope without importing anything**, so `list.repeat("", n)` and `list.length(xs)`
-  work as written, auto-loaded or not. `xs.length()` by UFCS does too.
-- **Importing `math/int` takes over the bare `max`/`min`.** `int.max(a, b)` and
-  `list.max(xs) : Option` collide on the unqualified name and the import wins, so `max(xs)`
-  fails with `int.max expects 2 arguments`. Same remedy: `render.max_of` says
-  `list.max(xs).unwrap_or(0)`.
+- **Unqualified, `string` wins over `list`.** `repeat("", n)` resolves to `string.repeat`
+  and yields `""`, never `[String]`; a `let` annotation does not steer it back. Qualify —
+  the module name is in scope with no import, so `list.repeat("", n)` works as written, and
+  `xs.length()` by UFCS too.
+- **Importing `math/int` takes over the bare `max`/`min`.** `max(xs)` then fails with
+  `int.max expects 2 arguments`. Same remedy: write `list.max(xs)`.
 - **A continuation line may not begin with `.`.** Binary operators do continue an
-  expression from the start of a line; a UFCS chain does not, and `\n  .contains(c)` is a
-  parse error at the dot. Break such a chain inside its parentheses, not before the dot.
-
-**String literals do have unicode escapes**, since
-[kaikai#1720](https://github.com/lnds/kaikai/issues/1720) closed on 2026-08-10. Verified on
-0.121.0: `"\u{1b}"` is a real ESC, `"\u{263A}"` and the astral `"\u{1F600}"` come out as
-correct UTF-8, and `"\x1b"` works too. An unknown escape is now a **hard error** naming the
-sequence, not a silently dropped backslash. `theme.esc` builds ESC with it.
+  expression across lines; a UFCS chain does not. Break the chain inside its parentheses.
 
 **This file ages faster than the language.** Before working around something it calls
 missing, spend the thirty seconds to check.
