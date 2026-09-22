@@ -213,15 +213,13 @@ which is what the status bar needs.
 
 Every one of these cost a compile cycle here; do not repeat them.
 
-- **A private `fn` still captures the name package-wide, over the prelude.** The two
-  module-against-module halves of [kaikai#1726](https://github.com/lnds/kaikai/issues/1726)
-  are fixed on 0.121, but this one survives: a private `fn starts_with(cs: [Char], m:
-  [Char])` in `mark/inline.kai` takes the name for the whole package, and `mark/parser.kai`
-  — which never mentions it — stops seeing the prelude's `starts_with(String, String)`.
-  Every error lands on the innocent file (`expected ([Char], [Char]), found (String,
-  String)`) and none of them names the file that caused it. This is why the scanner's
-  helper is `opens_with`. Before giving a private helper a common name, check
-  `kai info builtins` for it.
+- **A private `fn` captures the name package-wide, over the auto-loaded `core/*`.** A
+  private `fn starts_with(cs: [Char], m: [Char])` in `mark/inline.kai` takes the name for
+  the whole package, and `mark/parser.kai` — which never mentions it — stops seeing
+  `core/string`'s `starts_with(String, String)`. Every error lands on the innocent file
+  (`expected ([Char], [Char]), found (String, String)`) and none of them names the file
+  that caused it. This is why the scanner's helper is `opens_with`. Before giving a private
+  helper a common name, check `kai info builtins` for it.
 - **Match arms on one line are separated by `;`, not `,`.** A comma gives `expected
   pattern`.
 - **`text.char_width` takes an `Int`, not a `Char`** — `char_to_int(c)` first. The error
@@ -254,40 +252,14 @@ Every one of these cost a compile cycle here; do not repeat them.
   expression from the start of a line; a UFCS chain does not, and `\n  .contains(c)` is a
   parse error at the dot. Break such a chain inside its parentheses, not before the dot.
 
-Traps that **no longer are** (they were here, and were fixed upstream; do not assume them
-current if you read older code): the `Int` from `main` is the exit code, binary operators
-do continue an expression from the start of a line, `string.trim_left`/`trim_right` and
-`string.from_chars` exist, `pub const` does cross the module boundary, `Stdout.is_tty()`
-removed the need for a hand-written `isatty` shim, `kai lint` no longer reports
-`#[derive]` impls as dead code, and terevaka's shim no longer travels in `CFLAGS` — it is
-declared in its manifest's `[native]` table. Three more closed between 0.113 and 0.121:
-`#[derive]` on a record no longer breaks the `{ ...o }` spread
-([kaikai#1719](https://github.com/lnds/kaikai/issues/1719)), which is why `pager.scroll`
-spells one field again; and `kai fmt .` now walks the whole package instead of formatting
-only the entry point, and no longer pushes consecutive imports apart — so the tree is
-kept canonically formatted and `make fmt` is just `kai fmt .`. **`kai check .` still does
-not descend into `tests/`**, which is why that target alone still loops file by file.
-And most of [kaikai#1726](https://github.com/lnds/kaikai/issues/1726) went with them: a
-private `type` no longer hides another module's `pub type` of the same name — verified by
-putting a private `type Step` in `mark/theme.kai` and watching `pager.kai` still resolve
-`terevaka.app`'s `Step[m]` — and two private `fn`s sharing a name across modules now
-coexist. Only the collision against a prelude name is left, in the traps above.
-
-`pager.kai` used to carry a counter for that terevaka bug: `terevaka.term` reported EOF and
-an undecodable key both as `Key::Unknown`, so a closed descriptor spun the loop at 100% CPU
-and `blind_limit` cut it off after 200 in a row. terevaka 0.1.4 closed it
-([terevaka#6](https://github.com/kaikailang-org/terevaka/issues/6)): `Key` gained `Eof` and
-`app.run` ends the loop on it, before `step` is ever called. The counter, `Model.blind` and
-their two tests are gone.
-
 **String literals do have unicode escapes**, since
 [kaikai#1720](https://github.com/lnds/kaikai/issues/1720) closed on 2026-08-10. Verified on
 0.121.0: `"\u{1b}"` is a real ESC, `"\u{263A}"` and the astral `"\u{1F600}"` come out as
 correct UTF-8, and `"\x1b"` works too. An unknown escape is now a **hard error** naming the
 sequence, not a silently dropped backslash. `theme.esc` builds ESC with it.
 
-The lesson each of those teaches is the same: **this file ages faster than the language**.
-Before working around something it calls missing, spend the thirty seconds to check.
+**This file ages faster than the language.** Before working around something it calls
+missing, spend the thirty seconds to check.
 
 ## Conventions
 
