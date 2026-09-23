@@ -13,6 +13,17 @@ import terevaka.term as term
 #[doc("True when stdout is a terminal rather than a file or a pipe.")]
 pub fn is_terminal() : Bool / Stdout = Stdout.is_tty()
 
+#[doc("""
+True when both descriptors are terminals, which is what a TUI needs:
+one to paint on and one to take keys from.
+
+`is_terminal` alone is not enough. With stdout on a terminal and stdin
+redirected — `mark doc.md < /dev/null`, which a script does without
+thinking — the pager paints a frame, reads EOF, and clears the screen
+on its way out: the document never appears and nothing says why.
+""")]
+pub fn is_interactive() : Bool / Stdout + Stdin = Stdout.is_tty() and Stdin.is_tty()
+
 #[doc("Terminal columns; 80 when there is no terminal to ask.")]
 pub fn columns() : Int / Ffi = term.cols()
 

@@ -91,14 +91,16 @@ fn theme_for(o: cli.Opts) : theme.Theme / Env + Stdout =
 #
 # Never when the input came from stdin: the pager reads its keys from
 # that same descriptor, which by then is exhausted, leaving it no way to
-# be told to quit.
-fn paginate(o: cli.Opts, src: cli.Source, lines: Int) : Bool / Ffi + Stdout =
+# be told to quit. A redirected stdin is caught by `is_interactive`
+# instead, but a terminal typed into is not — it is a tty that has
+# already reached EOF, and only the source says so.
+fn paginate(o: cli.Opts, src: cli.Source, lines: Int) : Bool / Ffi + Stdout + Stdin =
   match src {
     FromStdin -> false
     _ -> match o.pager {
       "never" -> false
-      "always" -> tty.is_terminal()
-      _ -> tty.is_terminal() and lines > pager.body_rows(tty.rows())
+      "always" -> tty.is_interactive()
+      _ -> tty.is_interactive() and lines > pager.body_rows(tty.rows())
     }
   }
 
@@ -111,12 +113,12 @@ fn name_of(src: cli.Source) : String {
 # is no argument at all, which means the directory at hand — unless
 # there is no terminal to choose in, and then the help is the only
 # useful answer.
-fn resolve(src: cli.Source) : Option[cli.Source] / File + Ffi + Stdout = match src {
-  Browse(root) -> if tty.is_terminal() { pick(root) } else { Some(ShowHelp) }
+fn resolve(src: cli.Source) : Option[cli.Source] / File + Ffi + Stdout + Stdin = match src {
+  Browse(root) -> if tty.is_interactive() { pick(root) } else { Some(ShowHelp) }
   FromFile(p) ->
     if not is_directory(p) {
       Some(src)
-    } else if tty.is_terminal() {
+    } else if tty.is_interactive() {
       pick(p)
     } else {
       Some(Invalid("#{p} is a directory, and choosing from one needs a terminal"))
