@@ -56,7 +56,8 @@ fn go(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] = match cs {
     Some((body, rest)) -> go(rest, [], [CodeSpan(from_chars(body)), ...flush(buf, acc)])
     None -> go(t, ['`', ...buf], acc)
   }
-  ['[', ...t] -> take_link(t, buf, acc)
+  ['!', '[', ...t] -> take_link(t, buf, acc, true)
+  ['[', ...t] -> take_link(t, buf, acc, false)
   ['<', ...t] -> take_angle(t, buf, acc)
   ['&', ...t] -> take_entity(t, buf, acc)
   # Only an `h` can open a bare URL, and the check costs more than the
@@ -102,14 +103,20 @@ fn reopen(cs: [Char], close: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inli
 # `[text][label]`, `[label][]` and a bare `[label]` cannot, since the
 # definition may come later in the document, so they leave a `Ref` for
 # `parser.parse` to settle once it has read them all.
-fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
+#
+# `pic` is the leading `!` that makes each of them an image instead. The
+# shapes are identical, so only the node they build differs — and a
+# failed image reopens with both characters, since the `!` was consumed
+# along with the bracket.
+fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline], pic: Bool) : [ast.Inline] {
+  let reopened = if pic { ['[', '!', ...buf] } else { ['[', ...buf] }
   match take_until(cs, [']'], []) {
-    None -> go(cs, ['[', ...buf], acc)
+    None -> go(cs, reopened, acc)
     Some((label, after)) -> match after {
       ['(', ...rest] -> match take_raw(rest, [')'], []) {
         Some((target, tail)) ->
-          go(tail, [], [Link(scan_chars(label), destination(target)), ...flush(buf, acc)])
-        None -> go(cs, ['[', ...buf], acc)
+          go(tail, [], [linked(pic, scan_chars(label), destination(target)), ...flush(buf, acc)])
+        None -> go(cs, reopened, acc)
       }
       ['[', ...rest] -> match take_raw(rest, [']'], []) {
         Some((key, tail)) ->
@@ -117,15 +124,26 @@ fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
             tail,
             [],
             [
-              Ref(scan_chars(label), fold_chars(if key.is_empty() { label } else { key })),
+              referred(
+                pic,
+                scan_chars(label),
+                fold_chars(if key.is_empty() { label } else { key })
+              ),
               ...flush(buf, acc)
             ]
           )
-        None -> go(cs, ['[', ...buf], acc)
+        None -> go(cs, reopened, acc)
       }
-      _ -> go(after, [], [Ref(scan_chars(label), fold_chars(label)), ...flush(buf, acc)])
+      _ -> go(after, [], [referred(pic, scan_chars(label), fold_chars(label)), ...flush(buf, acc)])
     }
   }
+}
+
+fn linked(pic: Bool, label: [ast.Inline], dest: String) : ast.Inline =
+  if pic { Image(label, dest) } else { Link(label, dest) }
+
+fn referred(pic: Bool, label: [ast.Inline], key: String) : ast.Inline =
+  if pic { ImageRef(label, key) } else { Ref(label, key) }
 
 # What is inside the parentheses is a destination and, optionally, a
 # title. The title is dropped rather than shown: it repeats what the

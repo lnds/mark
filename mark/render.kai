@@ -59,6 +59,11 @@ fn block(th: theme.Theme, width: Int, b: ast.Block) : [String] = match b {
   Ordered(start, items) -> enumerate(items)
     || (p => list_item(th, width, "#{start + p.fst}. ", p.snd))
   Table(head, aligns, body) -> table(th, width, head, aligns, body)
+  # The sequence draws itself and leaves the cursor below: it occupies no
+  # columns, so it never goes through the wrap. The alt text is not shown
+  # beside it — the picture is there, and saying what it is twice is
+  # what the alt text exists to avoid.
+  Picture(seq, _) -> [seq]
 }
 
 # ---- Tables ----
@@ -270,6 +275,15 @@ fn styled(th: theme.Theme, xs: [ast.Inline], base: String) : [Cell] =
       # `parser.parse` resolves every reference; one reaching here came
       # from an AST built by hand, and its label is still the text.
       Ref(label, _) -> styled(th, label, base)
+      # An image the terminal could not draw, or that shares a line with
+      # text. Its alt text is what a reader is left with, so it is marked
+      # as a picture and keeps its source.
+      Image(label, src) ->
+        cells("[", base ++ th.marker)
+          ++ styled(th, label, base ++ th.marker)
+          ++ cells("]", base ++ th.marker)
+          ++ cells(" (#{src})", base ++ th.url)
+      ImageRef(label, _) -> styled(th, label, base)
     })
 
 fn cells(s: String, style: String) : [Cell] =

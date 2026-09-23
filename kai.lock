@@ -6,6 +6,6 @@
 [[package]]
 name = "terevaka"
 source = "github.com/kaikailang-org/terevaka"
-ref = "main"
-sha = "bc27e661562cce4a6574896af8b96b2937b4d000"
+ref = "v0.3.0"
+sha = "eb9cf290a11fc0d696661f9e4a1d7906de8a1abe"
 

@@ -109,6 +109,7 @@ options:
       --color <when>     auto | always | never (NO_COLOR also disables it)
   -p, --pager            page even when the text fits on screen
   -P, --no-pager         dump everything at once, without paging
+      --images <when>    auto | kitty | iterm | never
 ```
 
 In the pager: `j`/`k` or arrows scroll a line, `space`/`b` a page, `d`/`u` half
@@ -147,8 +148,18 @@ backslash, break the line where the source insists on it.
 HTML is not rendered and not shown either: a tag is dropped and the text inside
 it kept, so a paragraph wrapped in `<div>` reads as the sentence it holds.
 
-**Images are not supported.** `![alt](src)` comes out as a link with a stray `!`
-in front of it.
+**Images** are drawn when the terminal can draw them and mark is not paging.
+kitty is asked with its own capability query — an emulator that does not speak
+the protocol stays silent, which is the answer — and iTerm2, which defines no
+query, is recognised from `LC_TERMINAL` and `TERM_PROGRAM`. `--images` settles
+it by hand: `auto`, `kitty`, `iterm` or `never`.
+
+Only an image alone on its line is drawn. One sharing a line with text keeps
+its alt text, because an escape sequence occupies no columns and measuring it
+would break the wrap around it. The same fallback covers a terminal that
+cannot draw, a file that cannot be read, output that is not a terminal, and
+the pager — whose repaint measures its lines and has nothing to measure here.
+See `examples/images.md`.
 
 Tables are drawn with a box-drawing frame and honour the alignments the
 delimiter row declares (`:--`, `:-:`, `--:`). A table too wide for the terminal

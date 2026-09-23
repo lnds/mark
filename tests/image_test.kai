@@ -1,0 +1,60 @@
+import mark.image
+import array
+import bin
+import encoding.base64
+
+# "Man" — three bytes whose base64 is the textbook `TWFu`, with no
+# padding, so a wrong alphabet or a stray `=` shows up immediately.
+fn man() : Array[Byte] = array.from([bin.byte(77), bin.byte(97), bin.byte(110)])
+
+# Long enough to need two chunks: 3073 bytes base64-encode to 4100
+# characters, four past the protocol's cap.
+fn long() : Array[Byte] = array.from(repeat(bin.byte(65), 3073))
+
+fn esc() : String = "\u{1b}"
+
+test "a protocol that draws nothing returns nothing" {
+  assert image.sequence(NoImages, man()) == None
+}
+
+test "iTerm2 takes the payload whole, with the decoded length" {
+  assert image.sequence(Iterm, man())
+    == Some("#{esc()}]1337;File=inline=1;size=3:TWFu\u{7}")
+}
+
+test "kitty transmits and displays in one chunk when it fits" {
+  assert image.sequence(Kitty, man()) == Some("#{esc()}_Ga=T,f=100,m=0;TWFu#{esc()}\\")
+}
+
+test "kitty chunks at the protocol's cap, and only the last says it ends" {
+  match image.sequence(Kitty, long()) {
+    None -> {
+      assert false
+    }
+    Some(seq) -> {
+      # Two chunks: the opener carries the format and `m=1` for "more
+      # follows", the closer carries `m=0` and no format.
+      assert char_index_of(seq, "#{esc()}_Ga=T,f=100,m=1;") == Some(0)
+      assert char_index_of(seq, "m=0;") != None
+      # 4100 base64 characters split 4096 + 4, plus the two envelopes.
+      assert chars(seq).length()
+        == 4100
+          + chars("#{esc()}_Ga=T,f=100,m=1;#{esc()}\\").length()
+          + chars("#{esc()}_Gm=0;#{esc()}\\").length()
+    }
+  }
+}
+
+test "the payload survives the encoder untouched" {
+  match image.sequence(Kitty, long()) {
+    None -> {
+      assert false
+    }
+    Some(seq) -> {
+      let body = replace(replace(seq, "#{esc()}_Ga=T,f=100,m=1;", ""), "#{esc()}_Gm=0;", "")
+      let joined = replace(body, "#{esc()}\\", "")
+      assert base64.decode(joined) != None
+      assert chars(joined).length() == 4100
+    }
+  }
+}

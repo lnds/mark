@@ -11,12 +11,12 @@ screen. Pointed at a directory — or at nothing — it opens a picker over the 
 under it instead.
 
 **Actual state:** complete for what it set out to do — arguments, block parser, inline
-scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 70 tests
+scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 78 tests
 and 2 property checks green.
 
-**Not supported, and knowingly:** images. `![alt](src)` renders as its label and
-destination with the `!` in front, which is a link with a stray mark on it; what a
-terminal should do with an image is undecided rather than unimplemented.
+**Images** are drawn through the kitty or iTerm2 protocol, on a line of their own,
+when the terminal says it can and the pager is not involved. Everything else falls
+back to the alt text.
 
 Deliberately out of scope: automatic light/dark background detection via OSC 11 —
 `--style` settles it by hand.
@@ -141,6 +141,11 @@ argv/stdin/file            parse           render             output
 - `mark/pager.kai` — the viewport over the already-rendered lines. `Model`, `scroll`,
   `viewport`, `status` and `step` are **pure**; only `run` touches the terminal, so
   scrolling is tested by equality with no TUI to stand up.
+- `mark/image.kai` — whether the terminal draws pictures, and the escape sequence
+  that draws one. `detect` asks (kitty has a capability query; iTerm2 has only the
+  environment) and is the one effectful part; `sequence` is pure, bytes to escape
+  sequence, so the chunking is tested without a terminal. The bytes themselves are
+  read in `main`, which is what keeps `render` from ever touching a disk.
 - `mark/finder.kai` — the picker over the markdown files under a root. Same split as the
   pager: `Model`, `move_to`, `viewport`, `status` and `step` are **pure**, and only `run`
   touches a terminal. Its walk is `File`, not `Ffi` — `fs.dir.walk` and nothing else.

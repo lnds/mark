@@ -90,3 +90,18 @@ test "entities decode, named and numeric alike" {
   assert inline.scan("a &nope; b") == [Text("a &nope; b")]
   assert inline.scan("AT&T") == [Text("AT&T")]
 }
+
+test "an image is a link with a bang, in every spelling" {
+  assert inline.scan("![alt](pic.png)") == [Image([Text("alt")], "pic.png")]
+  assert inline.scan("![alt][k]") == [ImageRef([Text("alt")], "k")]
+  assert inline.scan("![Alt][]") == [ImageRef([Text("Alt")], "alt")]
+  assert inline.scan("![alt]") == [ImageRef([Text("alt")], "alt")]
+  # The label is rescanned like any other; the source is not.
+  assert inline.scan("![*a*](p_q.png)") == [Image([Emph([Text("a")])], "p_q.png")]
+}
+
+test "a bang that opens nothing keeps both its characters" {
+  assert inline.scan("![alt") == [Text("![alt")]
+  assert inline.scan("a ! b") == [Text("a ! b")]
+  assert inline.scan("\\![no](x)") == [Text("!"), Link([Text("no")], "x")]
+}

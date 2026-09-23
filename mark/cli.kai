@@ -4,7 +4,7 @@ touching no environment. `main.kai` hands it `args.argv()` and resolves
 afterwards whatever depends on the terminal (real width, colour).
 """)]
 
-pub const VERSION : String = "0.4.0"
+pub const VERSION : String = "0.5.0"
 
 #[doc("""
 Where the document comes from, as far as the arguments settle it.
@@ -33,11 +33,19 @@ pub type Opts = {
   width: Int,
   style: String,
   color: String,
-  pager: String
+  pager: String,
+  images: String
 }
 
 fn defaults() : Opts =
-  Opts { source: Browse("."), width: 0, style: "auto", color: "auto", pager: "auto" }
+  Opts {
+    source: Browse("."),
+    width: 0,
+    style: "auto",
+    color: "auto",
+    pager: "auto",
+    images: "auto"
+  }
 
 pub fn parse_args(argv: [String]) : Opts = match argv {
   [] -> defaults()
@@ -60,6 +68,7 @@ fn walk(argv: [String], o: Opts) : Opts = match o.source {
     ["-s", s, ...t] -> walk(t, with_style(o, s))
     ["--style", s, ...t] -> walk(t, with_style(o, s))
     ["--color", c, ...t] -> walk(t, with_color(o, c))
+    ["--images", i, ...t] -> walk(t, with_images(o, i))
     ["-p", ...t] -> walk(t, Opts { ...o, pager: "always" })
     ["--pager", ...t] -> walk(t, Opts { ...o, pager: "always" })
     ["-P", ...t] -> walk(t, Opts { ...o, pager: "never" })
@@ -95,6 +104,13 @@ fn with_style(o: Opts, s: String) : Opts =
     Opts { ...o, source: Invalid("unknown style: #{s} (dark|light|auto)") }
   }
 
+fn with_images(o: Opts, i: String) : Opts =
+  if i == "auto" or i == "kitty" or i == "iterm" or i == "never" {
+    Opts { ...o, images: i }
+  } else {
+    Opts { ...o, source: Invalid("unknown image mode: #{i} (auto|kitty|iterm|never)") }
+  }
+
 fn with_color(o: Opts, c: String) : Opts =
   if c == "auto" or c == "always" or c == "never" {
     Opts { ...o, color: c }
@@ -118,6 +134,7 @@ options:
   -w, --width <n>        output width (default: the terminal's, capped at 80)
   -s, --style <style>    dark | light | auto
       --color <when>     auto | always | never (NO_COLOR also disables it)
+      --images <when>    auto | kitty | iterm | never (only when not paging)
   -p, --pager            page even when the text fits on screen
   -P, --no-pager         dump everything at once, without paging
 

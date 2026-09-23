@@ -200,3 +200,9 @@ test "two trailing spaces are a break the wrap may not undo" {
   # One trailing space is not two: the lines still join.
   assert parser.parse("one \ntwo") == [Para([Text("one two")])]
 }
+
+test "an image reference resolves, or keeps its bang and brackets" {
+  let found = parser.parse("![pic][p]\n\n[p]: a.png")
+  assert found == [Para([Image([Text("pic")], "a.png")])]
+  assert parser.parse("![pic][p]") == [Para([Text("!["), Text("pic"), Text("]")])]
+}

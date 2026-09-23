@@ -121,10 +121,15 @@ fn resolve_item(defs: Defs, it: ast.Item) : ast.Item =
 fn resolve(defs: Defs, xs: [ast.Inline]) : [ast.Inline] = xs || (x => resolve_one(defs, x))
 
 fn resolve_one(defs: Defs, x: ast.Inline) : [ast.Inline] = match x {
-  Ref(label, key) -> match find_map(defs, d => if d.fst == key { Some(d.snd) } else { None }) {
+  Ref(label, key) -> match lookup(defs, key) {
     Some(dest) -> [Link(resolve(defs, label), dest)]
     None -> [Text("["), ...resolve(defs, label), Text("]")]
   }
+  ImageRef(label, key) -> match lookup(defs, key) {
+    Some(src) -> [Image(resolve(defs, label), src)]
+    None -> [Text("!["), ...resolve(defs, label), Text("]")]
+  }
+  Image(label, src) -> [Image(resolve(defs, label), src)]
   Emph(inner) -> [Emph(resolve(defs, inner))]
   Strong(inner) -> [Strong(resolve(defs, inner))]
   Strike(inner) -> [Strike(resolve(defs, inner))]
@@ -578,3 +583,6 @@ fn drop_suffix_run(s: String, suffix: String) : String =
     Some(r) -> drop_suffix_run(r, suffix)
     None -> s
   }
+
+fn lookup(defs: Defs, key: String) : Option[String] =
+  find_map(defs, d => if d.fst == key { Some(d.snd) } else { None })

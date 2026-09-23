@@ -7,9 +7,11 @@ parse -> render pipeline, and writes the result out.
 """)]
 
 import fs.dir
+import fs.file
 import math.int
 import os.args
 import os.env
+import mark.ast
 import mark.cli
 import mark.parser
 import mark.render
@@ -17,6 +19,7 @@ import mark.theme
 import mark.tty
 import mark.pager
 import mark.finder
+import mark.image
 
 # Drains stdin line by line to EOF, gathering backwards so the join is
 # the only pass over the whole input.
@@ -138,9 +141,79 @@ fn pick(root: String) : Option[cli.Source] / File + Ffi {
   }
 }
 
+# ---- Pictures ----
+
+# The one place a byte is read for an image. The pipeline downstream is
+# pure, so the file is opened here and what travels on is the finished
+# escape sequence — `render` never learns there was a disk.
+#
+# Only a paragraph that is nothing but one image becomes a picture. An
+# image sharing a line with text would have to be measured, and an
+# escape sequence has no width: it would break the wrap around it. That
+# one keeps its alt text.
+fn with_pictures(proto: image.Protocol, bs: [ast.Block]) : [ast.Block] / File =
+  bs
+    | (b => match b {
+      Para([Image(alt, src)]) -> picture(proto, alt, src)
+      Quote(inner) -> Quote(with_pictures(proto, inner))
+      other -> other
+    })
+
+# A file that cannot be read is not an error worth stopping for: the
+# document still says what the picture was, which is more than a dead
+# process would.
+fn picture(proto: image.Protocol, alt: [ast.Inline], src: String) : ast.Block / File =
+  match file.read_bytes(src) {
+    Err(_) -> Para([Image(alt, src)])
+    Ok(bytes) -> match image.sequence(proto, bytes) {
+      Some(seq) -> Picture(seq, alt)
+      None -> Para([Image(alt, src)])
+    }
+  }
+
 # `fs.dir.list_dir` answers with the entries or with nothing at all, so
 # an empty directory reads as a file here and is caught by the read.
 fn is_directory(path: String) : Bool / File = not dir.list_dir(path).is_empty()
+
+# A document with a picture in it is dumped rather than paged, and that
+# is a choice: the pager repaints by measuring its lines, and the escape
+# sequence that draws a picture has no width to measure. Paging one
+# would mean showing the alt text instead — so the picture wins, since
+# it is what the reader asked for, and the scrollback is still there.
+#
+# The terminal is asked only when the document has something to draw.
+# The query costs a round trip, and a silent terminal costs the whole
+# budget, which no ordinary document should pay for.
+fn show(
+  opts: cli.Opts,
+  src: cli.Source,
+  doc: [ast.Block]
+) : Unit / Stdout + Env + File + Ffi + Stdin {
+  let th = theme_for(opts)
+  let width = width_for(opts)
+  let proto = if draws_anything(doc) { image.detect(opts.images) } else { NoImages }
+  if proto == NoImages {
+    let lines = render.render(th, width, doc)
+    if paginate(opts, src, lines.length()) {
+      pager.run(lines, name_of(src))
+    } else {
+      foreach(lines, l => Stdout.print(l))
+    }
+  } else {
+    foreach(render.render(th, width, with_pictures(proto, doc)), l => Stdout.print(l))
+  }
+}
+
+# Whether asking the terminal could change anything: a paragraph that is
+# one image and nothing else is the only shape that becomes a picture.
+fn draws_anything(bs: [ast.Block]) : Bool = any(
+  bs,
+  b => match b {
+    Para([Image(_, _)]) -> true
+    Quote(inner) -> draws_anything(inner)
+    _ -> false
+  }
+)
 
 fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi {
   let opts = cli.parse_args(args.argv())
@@ -155,12 +228,7 @@ fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi {
         if verbatim(src) {
           Stdout.print(text)
         } else {
-          let lines = render.render(theme_for(opts), width_for(opts), parser.parse(text))
-          if paginate(opts, src, lines.length()) {
-            pager.run(lines, name_of(src))
-          } else {
-            foreach(lines, l => Stdout.print(l))
-          }
+          show(opts, src, parser.parse(text))
         }
         0
       }

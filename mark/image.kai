@@ -1,0 +1,127 @@
+#[doc("""
+Drawing an image on a terminal that can: asking whether it can, and
+building the escape sequence that does it.
+
+Two protocols are spoken. **kitty** is asked rather than assumed — it
+defines a query whose answer is the capability itself, and a terminal
+that does not speak it stays silent. **iTerm2** defines no query, so it
+is recognised from the environment, which is weaker and says so.
+
+`detect` is the only part that touches a terminal. `sequence` is pure:
+bytes in, escape sequence out, testable without one.
+""")]
+
+import array
+import bin
+import encoding.base64
+import os.env
+import terevaka.term as term
+
+#[doc("""
+What the terminal will accept. `NoImages` is both "it cannot" and "we
+were told not to ask" — from the caller's side they are the same
+answer.
+""")]
+#[derive(Eq, Show)]
+pub type Protocol = Kitty | Iterm | NoImages
+
+#[doc("""
+Asks the terminal what it can draw, honouring `want`: `"never"` does
+not ask at all, `"kitty"` and `"iterm"` say it without asking, and
+`"auto"` queries for kitty and then falls back to recognising iTerm2
+from the environment.
+
+The query goes out only when both descriptors are terminals. With
+stdout redirected there is nobody to answer and the request would land
+in the output as stray bytes, which is a corruption that survives into
+whatever file was being written.
+""")]
+pub fn detect(want: String) : Protocol / Ffi + Env + Stdout + Stdin = match want {
+  "never" -> NoImages
+  "none" -> NoImages
+  "kitty" -> Kitty
+  "iterm" -> Iterm
+  _ ->
+    if not (Stdout.is_tty() and Stdin.is_tty()) {
+      NoImages
+    } else if speaks_kitty() {
+      Kitty
+    } else if looks_like_iterm() {
+      Iterm
+    } else {
+      NoImages
+    }
+}
+
+# kitty's capability query: a one-pixel transmission it is asked to
+# report on rather than draw. A terminal that implements the protocol
+# answers `OK`; one that does not answers nothing, and `probe` returns
+# `None` after its budget rather than hanging.
+fn speaks_kitty() : Bool / Ffi = match term.probe(
+  "#{esc()}_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA#{esc()}\\",
+  [st(), bel()],
+  250
+) {
+  Some(reply) -> char_index_of(reply, "OK") != None
+  None -> false
+}
+
+# iTerm2 ships no query, so this is the environment or nothing.
+# `LC_TERMINAL` is the one that survives ssh, since iTerm2 forwards it
+# on purpose; `TERM_PROGRAM` is local only.
+fn looks_like_iterm() : Bool / Env =
+  env.get("LC_TERMINAL").unwrap_or("") == "iTerm2"
+    or env.get("TERM_PROGRAM").unwrap_or("") == "iTerm.app"
+
+#[doc("""
+The escape sequence that draws `bytes`, or `None` for a protocol that
+draws nothing. Pure — the bytes were read by the caller.
+
+kitty takes the payload in chunks, because its own protocol caps an
+escape sequence at 4096 base64 characters; every chunk but the last
+says another follows. iTerm2 takes it whole and wants the decoded
+length, which is what it sizes the drawing from.
+""")]
+pub fn sequence(proto: Protocol, buf: Array[Byte]) : Option[String] = match proto {
+  NoImages -> None
+  Iterm -> {
+    let bytes = payload(buf)
+    Some("#{esc()}]1337;File=inline=1;size=#{bytes.length()}:#{base64.encode(bytes)}#{bel()}")
+  }
+  Kitty -> Some(join(kitty_chunks(chunk(base64.encode(payload(buf))), true, []), ""))
+}
+
+# `Byte` is its own type and the encoder wants `Int`, so every byte is
+# read back out of the buffer by index — `bin.get_uint_be` over one byte
+# is the accessor the stdlib gives for exactly this.
+fn payload(buf: Array[Byte]) : [Int] =
+  enumerate(array.to_list(buf)) | (p => bin.get_uint_be(buf, p.fst, 1).unwrap_or(0))
+
+# 4096 base64 characters is the protocol's cap per escape sequence.
+fn chunk(payload: String) : [String] {
+  let n = chars(payload).length()
+  if n <= 4096 {
+    [payload]
+  } else {
+    [slice(payload, 0, 4096), ...chunk(slice(payload, 4096, n - 4096))]
+  }
+}
+
+# Only the first chunk carries the format and the order to display;
+# every one says whether another follows, and the last says it does not.
+fn kitty_chunks(cs: [String], first: Bool, acc: [String]) : [String] = match cs {
+  [] -> reverse(acc)
+  [c] -> reverse(["#{esc()}_G#{if first { "a=T,f=100," } else { "" }}m=0;#{c}#{st()}", ...acc])
+  [c, ...t] ->
+    kitty_chunks(t, false, [
+      "#{esc()}_G#{if first { "a=T,f=100," } else { "" }}m=1;#{c}#{st()}",
+      ...acc
+    ])
+}
+
+fn esc() : String = "\u{1b}"
+
+# The two ways a terminal closes an answer: ST, and the older BEL.
+fn st() : String = "#{esc()}\\"
+
+fn bel() : String = "\u{7}"
