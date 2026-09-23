@@ -109,7 +109,7 @@ options:
       --color <when>     auto | always | never (NO_COLOR also disables it)
   -p, --pager            page even when the text fits on screen
   -P, --no-pager         dump everything at once, without paging
-      --images <when>    auto | kitty | iterm | never
+      --images <when>    auto | kitty | iterm | never (a drawn one skips the pager)
 ```
 
 In the pager: `j`/`k` or arrows scroll a line, `space`/`b` a page, `d`/`u` half
