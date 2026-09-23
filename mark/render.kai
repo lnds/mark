@@ -24,6 +24,10 @@ pub fn min_width() : Int = 20
 pub fn render(th: theme.Theme, width: Int, bs: [ast.Block]) : [String] =
   reverse(blocks(th, int.max(width, min_width()), bs, []))
 
+# The cell a hard break travels as. A newline occupies no column and
+# cannot occur in a line otherwise, so it needs no escaping of its own.
+const BREAK : Char = '\n'
+
 # A codepoint with its style: the intermediate representation that
 # allows measuring without counting the ANSI codes.
 type Cell = { ch: Char, style: String }
@@ -51,13 +55,9 @@ fn block(th: theme.Theme, width: Int, b: ast.Block) : [String] = match b {
   Code(_, ls) -> ls | (l => paint_all(th.code, "  " ++ l, th.reset))
   Quote(inner) ->
     indent(paint_all(th.quote, "│ ", th.reset), 2, block_list(th, width - 2, inner))
-  Bullets(items) -> items
-    || (it => item(th, width, paint_all(th.marker, "• ", th.reset), 2, it))
+  Bullets(items) -> items || (it => list_item(th, width, "• ", it))
   Ordered(start, items) -> enumerate(items)
-    || (p => {
-      let label = "#{start + p.fst}. "
-      item(th, width, paint_all(th.marker, label, th.reset), label.length(), p.snd)
-    })
+    || (p => list_item(th, width, "#{start + p.fst}. ", p.snd))
   Table(head, aligns, body) -> table(th, width, head, aligns, body)
 }
 
@@ -206,9 +206,23 @@ fn block_list(th: theme.Theme, width: Int, bs: [ast.Block]) : [String] =
   reverse(blocks(th, int.max(width, 4), bs, []))
 
 # A list item: the marker only on the first line, the rest aligned to
-# the column where its text starts.
-fn item(th: theme.Theme, width: Int, marker: String, pad: Int, bs: [ast.Block]) : [String] =
-  indent_first(marker, repeat(" ", pad), block_list(th, width - pad, bs))
+# the column where its text starts. A task item carries its box after
+# the marker, so the bullets of a mixed list still line up.
+fn list_item(th: theme.Theme, width: Int, marker: String, it: ast.Item) : [String] {
+  let lead = marker ++ task_box(it.task)
+  let pad = text.display_width(lead)
+  indent_first(
+    paint_all(th.marker, lead, th.reset),
+    repeat(" ", pad),
+    block_list(th, width - pad, it.blocks)
+  )
+}
+
+fn task_box(task: Option[Bool]) : String = match task {
+  None -> ""
+  Some(true) -> "[x] "
+  Some(false) -> "[ ] "
+}
 
 # Wraps the cells and puts the prefix on the first line; the following
 # ones line up with its column.
@@ -241,11 +255,21 @@ fn styled(th: theme.Theme, xs: [ast.Inline], base: String) : [Cell] =
       Text(s) -> cells(s, base)
       Emph(inner) -> styled(th, inner, base ++ th.emph)
       Strong(inner) -> styled(th, inner, base ++ th.strong)
+      Strike(inner) -> styled(th, inner, base ++ th.strike)
       CodeSpan(s) -> cells(s, base ++ th.code)
       # The destination rides along with the label in parentheses: with no
-      # terminal hyperlink, an invisible URL is a lost URL.
+      # terminal hyperlink, an invisible URL is a lost URL. Unless the
+      # label already is the URL, as in an autolink — then printing it
+      # twice is the only thing the parentheses would add.
       Link(label, dest) ->
-        styled(th, label, base ++ th.link) ++ cells(" (#{dest})", base ++ th.url)
+        styled(th, label, base ++ th.link)
+          ++ (if shows_dest(label, dest) { cells(" (#{dest})", base ++ th.url) } else { [] })
+      # A hard break travels as a newline cell; `wrap` is what turns it
+      # into a line, since only it knows where the line was.
+      Break -> [Cell { ch: BREAK, style: "" }]
+      # `parser.parse` resolves every reference; one reaching here came
+      # from an AST built by hand, and its label is still the text.
+      Ref(label, _) -> styled(th, label, base)
     })
 
 fn cells(s: String, style: String) : [Cell] =
@@ -273,7 +297,12 @@ fn wrap(cs: [Cell], width: Int, line: Run, word: Run, acc: [[Cell]]) : [[Cell]] 
       )
     }
     [c, ...t] ->
-      if c.ch == ' ' {
+      if c.ch == BREAK {
+        # The source asked for this line to end here. Whatever is in hand
+        # closes it, and the next word starts a line of its own.
+        let (done, current) = place(acc, line, word, width)
+        wrap(t, width, empty_run(), empty_run(), [reverse(current.cells), ...done])
+      } else if c.ch == ' ' {
         let (done, current) = place(acc, line, word, width)
         wrap(t, width, current, empty_run(), done)
       } else {
@@ -341,3 +370,11 @@ fn emit(style: String, buf: [Char], out: [String], rst: String) : [String] =
 
 fn paint_all(style: String, s: String, rst: String) : String =
   if style == "" or s == "" { s } else { style ++ s ++ rst }
+
+# An autolink is its own destination, and `<a@b>` only gained the scheme
+# a terminal could not infer for it. Either way the parentheses would
+# repeat the label word for word.
+fn shows_dest(label: [ast.Inline], dest: String) : Bool = match label {
+  [ast.Text(s)] -> s != dest and "mailto:#{s}" != dest
+  _ -> true
+}

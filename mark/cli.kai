@@ -4,12 +4,20 @@ touching no environment. `main.kai` hands it `args.argv()` and resolves
 afterwards whatever depends on the terminal (real width, colour).
 """)]
 
-pub const VERSION : String = "0.3.0"
+pub const VERSION : String = "0.4.0"
 
-#[doc("Where the document comes from, already resolved from the arguments.")]
+#[doc("""
+Where the document comes from, as far as the arguments settle it.
+
+`Browse` is the one that is not settled: with no argument there is a
+directory to choose from rather than a document to read, and only
+`main` — which may look at the filesystem and the terminal — can turn
+it into a file, the help, or nothing at all.
+""")]
 #[derive(Eq, Show)]
 pub type Source
   = FromFile(String)
+  | Browse(String)
   | FromStdin
   | ShowHelp
   | ShowVersion
@@ -29,7 +37,7 @@ pub type Opts = {
 }
 
 fn defaults() : Opts =
-  Opts { source: ShowHelp, width: 0, style: "auto", color: "auto", pager: "auto" }
+  Opts { source: Browse("."), width: 0, style: "auto", color: "auto", pager: "auto" }
 
 pub fn parse_args(argv: [String]) : Opts = match argv {
   [] -> defaults()
@@ -100,6 +108,8 @@ pub fn help_text() : String = """mark #{VERSION} — a markdown viewer for the t
 
 usage:
   mark <file.md>         render a file
+  mark <dir>             choose a file from the tree under it
+  mark                   the same, for the directory at hand
   mark -                 render whatever arrives on stdin
   mark -h | --help       this help
   mark -v | --version    the version
@@ -114,4 +124,9 @@ options:
 in the pager:
   j/k, up/down           one line              space/b   one page
   d/u                    half a page           g/G       start/end
+  q, Esc                 quit
+
+in the file picker:
+  j/k, up/down           one entry             space/b   one page
+  enter                  open it               g/G       start/end
   q, Esc                 quit"""

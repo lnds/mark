@@ -1,7 +1,7 @@
 import mark.cli
 
-test "no arguments means the help" {
-  assert cli.parse_args([]).source == ShowHelp
+test "no arguments means the directory at hand, for main to settle" {
+  assert cli.parse_args([]).source == Browse(".")
 }
 
 test "flags and a file" {

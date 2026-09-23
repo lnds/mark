@@ -8,14 +8,26 @@ the parser be tested by structural equality.
 Content within a line. `Text` is the literal, already stripped of its
 markup. The block phase produces only `Text`; the inline scanner
 replaces those nodes with the tree of emphasis, code and links.
+
+`Break` is a hard line break — the two trailing spaces or the trailing
+backslash the source used to insist on a break the wrap would not have
+chosen. A soft newline is a space and leaves no node.
+
+`Ref` is the unresolved half of a reference link, `[text][label]`, and
+never survives `parser.parse`: the definitions are gathered from the
+whole document first, so the resolution happens once the last one has
+been seen. What no definition matches degrades to its literal text.
 """)]
 #[derive(Eq, Show)]
 pub type Inline
   = Text(String)
   | Emph([Inline])
   | Strong([Inline])
+  | Strike([Inline])
   | CodeSpan(String)
   | Link([Inline], String)
+  | Ref([Inline], String)
+  | Break
 
 #[doc("""
 How a column is aligned, as its delimiter row declared it: `:--` left,
@@ -25,10 +37,19 @@ How a column is aligned, as its delimiter row declared it: `:--` left,
 pub type Align = AlignLeft | AlignCenter | AlignRight
 
 #[doc("""
+One entry of a list: the blocks that make up its content, and whether
+the source opened it with a task box. `task` is `None` for an ordinary
+item, `Some(false)` for `- [ ]` and `Some(true)` for `- [x]` — a list
+may mix the two, so the box belongs to the item and not to the list.
+""")]
+#[derive(Eq, Show)]
+pub type Item = { task: Option[Bool], blocks: [Block] }
+
+#[doc("""
 A top-level block. `Code` carries the fence language (empty when none
 was declared) and its raw lines, never reinterpreted. `Bullets` and
-`Ordered` hold each item as a list of blocks, which is what allows
-paragraphs and sublists to nest inside an item. `Ordered` remembers the
+`Ordered` hold each item as an `Item`, whose blocks are what allows
+paragraphs and sublists to nest inside it. `Ordered` remembers the
 number the list started at.
 
 `Table` holds the header row, one alignment per column, and the body
@@ -42,7 +63,7 @@ pub type Block
   | Para([Inline])
   | Code(String, [String])
   | Quote([Block])
-  | Bullets([[Block]])
-  | Ordered(Int, [[Block]])
+  | Bullets([Item])
+  | Ordered(Int, [Item])
   | Table([[Inline]], [Align], [[[Inline]]])
   | Rule

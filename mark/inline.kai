@@ -5,7 +5,9 @@ Scanner for the content of a line: turns the text of a block into the
 The walk is codepoint by codepoint, gathering literal text into a
 buffer that is flushed as `Text` whenever a node opens. An unclosed
 delimiter is not an error: it degrades to literal text, so the scanner
-never loses content.
+never loses content. The same rule covers every shape it recognises —
+an entity it cannot name, an angle bracket that opens no tag, a
+reference whose definition never arrives.
 
 Every accumulator here grows at the FRONT and is reversed once at the
 end. Appending with `acc ++ [x]` copies the whole accumulator on each
@@ -18,6 +20,12 @@ import mark.ast
 #[doc("Turns the text of a line into its tree of inline nodes.")]
 pub fn scan(s: String) : [ast.Inline] = scan_chars(chars(s))
 
+#[doc("""
+The label of a link reference definition, as it is matched: trimmed and
+folded to lower case, so `[Foo]` finds `[foo]: ...`.
+""")]
+pub fn fold_label(s: String) : String = to_lower(trim(s))
+
 # `go` builds its node list backwards; this is the only place that pays
 # for putting it back in order.
 fn scan_chars(cs: [Char]) : [ast.Inline] = reverse(go(cs, [], []))
@@ -26,7 +34,11 @@ fn go(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] = match cs {
   [] -> flush(buf, acc)
   ['\\', e, ...t] ->
     if escapable(e) { go(t, [e, ...buf], acc) } else { go(t, [e, '\\', ...buf], acc) }
+  # The block phase joins a paragraph's lines with a space, and leaves a
+  # newline only where the source asked for a break it must not undo.
+  ['\n', ...t] -> go(t, [], [Break, ...flush(buf, acc)])
   ['*', '*', ...t] -> delimited(t, ['*', '*'], buf, acc, xs => Strong(xs))
+  ['~', '~', ...t] -> delimited(t, ['~', '~'], buf, acc, xs => Strike(xs))
   ['_', '_', ...t] ->
     if word_edge(buf) {
       delimited(t, ['_', '_'], buf, acc, xs => Strong(xs))
@@ -45,7 +57,20 @@ fn go(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] = match cs {
     None -> go(t, ['`', ...buf], acc)
   }
   ['[', ...t] -> take_link(t, buf, acc)
-  [c, ...t] -> go(t, [c, ...buf], acc)
+  ['<', ...t] -> take_angle(t, buf, acc)
+  ['&', ...t] -> take_entity(t, buf, acc)
+  # Only an `h` can open a bare URL, and the check costs more than the
+  # copy of one character does. Every other character takes the short
+  # path, which is almost all of them.
+  [c, ...t] ->
+    if c != 'h' {
+      go(t, [c, ...buf], acc)
+    } else {
+      match take_bare_url(cs, buf) {
+        Some((url, rest)) -> go(rest, [], [Link([Text(url)], url), ...flush(buf, acc)])
+        None -> go(t, [c, ...buf], acc)
+      }
+    }
 }
 
 # A node with a symmetric delimiter. With no valid close the delimiter
@@ -71,19 +96,193 @@ fn delimited(
 fn reopen(cs: [Char], close: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
   go(cs, reverse(close) ++ buf, acc)
 
-# `[text](destination)`: the label is rescanned, the destination is not.
+# ---- Links ----
+
+# Three shapes share the opening bracket. `[text](dest)` resolves here;
+# `[text][label]`, `[label][]` and a bare `[label]` cannot, since the
+# definition may come later in the document, so they leave a `Ref` for
+# `parser.parse` to settle once it has read them all.
 fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
   match take_until(cs, [']'], []) {
     None -> go(cs, ['[', ...buf], acc)
     Some((label, after)) -> match after {
       ['(', ...rest] -> match take_raw(rest, [')'], []) {
-        Some((dest, tail)) ->
-          go(tail, [], [Link(scan_chars(label), from_chars(dest)), ...flush(buf, acc)])
+        Some((target, tail)) ->
+          go(tail, [], [Link(scan_chars(label), destination(target)), ...flush(buf, acc)])
         None -> go(cs, ['[', ...buf], acc)
       }
-      _ -> go(cs, ['[', ...buf], acc)
+      ['[', ...rest] -> match take_raw(rest, [']'], []) {
+        Some((key, tail)) ->
+          go(
+            tail,
+            [],
+            [
+              Ref(scan_chars(label), fold_chars(if key.is_empty() { label } else { key })),
+              ...flush(buf, acc)
+            ]
+          )
+        None -> go(cs, ['[', ...buf], acc)
+      }
+      _ -> go(after, [], [Ref(scan_chars(label), fold_chars(label)), ...flush(buf, acc)])
     }
   }
+
+# What is inside the parentheses is a destination and, optionally, a
+# title. The title is dropped rather than shown: it repeats what the
+# label already says, and the destination is the part that would
+# otherwise be lost.
+fn destination(target: [Char]) : String {
+  let t = trim(from_chars(target))
+  let bare = drop_prefix(t, "<").unwrap_or(t)
+  let no_title = match char_index_of(bare, " ") {
+    Some(i) -> slice(bare, 0, i)
+    None -> bare
+  }
+  drop_suffix(no_title, ">").unwrap_or(no_title)
+}
+
+fn fold_chars(cs: [Char]) : String = fold_label(from_chars(cs))
+
+# ---- Angle brackets: autolinks and HTML ----
+
+# `<https://x>` and `<a@b>` are links the source spelled out. A tag is
+# dropped and its text kept, which is what makes a line of HTML read as
+# the sentence inside it. Anything else was never markup: `a < b` stays.
+fn take_angle(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
+  match take_raw(cs, ['>'], []) {
+    None -> go(cs, ['<', ...buf], acc)
+    Some((body, rest)) -> {
+      let s = from_chars(body)
+      if is_autolink(s) {
+        go(rest, [], [Link([Text(s)], autolink_dest(s)), ...flush(buf, acc)])
+      } else if is_tag(body) {
+        go(rest, buf, acc)
+      } else {
+        go(cs, ['<', ...buf], acc)
+      }
+    }
+  }
+
+fn is_autolink(s: String) : Bool =
+  (not contains(chars(s), ' '))
+    and (not is_empty(s))
+    and (char_index_of(s, "://") != None or char_index_of(s, "@") != None)
+
+# A bare address gets the scheme a terminal cannot infer for it.
+fn autolink_dest(s: String) : String =
+  if char_index_of(s, "://") != None { s } else { "mailto:#{s}" }
+
+# `<p>`, `</p>`, `<br/>`, `<!-- x -->`: a name, a closing slash or a
+# declaration mark, never a space where the name belongs.
+fn is_tag(body: [Char]) : Bool = match body {
+  [] -> false
+  ['!', ..._] -> true
+  ['/', c, ..._] -> is_alpha(c)
+  [c, ..._] -> is_alpha(c)
+}
+
+# ---- Bare URLs ----
+
+# A URL written without any markup is still a URL. Only the two schemes
+# a reader actually types are recognised: guessing at more turns ordinary
+# punctuation into links.
+fn take_bare_url(cs: [Char], buf: [Char]) : Option[(String, [Char])] =
+  if not word_edge(buf) {
+    None
+  } else if opens_with(cs, chars("http://")) or opens_with(cs, chars("https://")) {
+    let (raw, rest) = span(cs, c => c != ' ' and c != '<' and c != '\n')
+    let n = raw.length() - trailing_noise(reverse(raw), 0)
+    if n <= 0 { None } else { Some((from_chars(take(raw, n)), drop(cs, n))) }
+  } else {
+    None
+  }
+
+# Punctuation that ended the sentence rather than the URL. The list runs
+# backwards, so this counts from its end.
+fn trailing_noise(rev: [Char], n: Int) : Int = match rev {
+  [] -> n
+  [c, ...t] ->
+    if c == '.' or c == ',' or c == ';' or c == ':' or c == '!' or c == '?' or c == ')' {
+      trailing_noise(t, n + 1)
+    } else {
+      n
+    }
+}
+
+# ---- Entities ----
+
+# `&amp;` and its neighbours, plus the numeric forms. An unknown name is
+# not an entity: the ampersand is text and the scan goes on from it.
+fn take_entity(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
+  match take_raw(take(cs, 12), [';'], []) {
+    None -> go(cs, ['&', ...buf], acc)
+    Some((name, _)) -> match entity(from_chars(name)) {
+      Some(c) -> go(drop(cs, name.length() + 1), [c, ...buf], acc)
+      None -> go(cs, ['&', ...buf], acc)
+    }
+  }
+
+fn entity(name: String) : Option[Char] = match name {
+  "amp" -> Some('&')
+  "lt" -> Some('<')
+  "gt" -> Some('>')
+  "quot" -> Some('"')
+  "apos" -> Some('\'')
+  "nbsp" -> Some(' ')
+  "hellip" -> Some('\u{2026}')
+  "mdash" -> Some('\u{2014}')
+  "ndash" -> Some('\u{2013}')
+  "laquo" -> Some('\u{ab}')
+  "raquo" -> Some('\u{bb}')
+  "ldquo" -> Some('\u{201c}')
+  "rdquo" -> Some('\u{201d}')
+  "lsquo" -> Some('\u{2018}')
+  "rsquo" -> Some('\u{2019}')
+  "copy" -> Some('\u{a9}')
+  "reg" -> Some('\u{ae}')
+  "trade" -> Some('\u{2122}')
+  "deg" -> Some('\u{b0}')
+  "plusmn" -> Some('\u{b1}')
+  "times" -> Some('\u{d7}')
+  "divide" -> Some('\u{f7}')
+  "bull" -> Some('\u{2022}')
+  "middot" -> Some('\u{b7}')
+  "larr" -> Some('\u{2190}')
+  "rarr" -> Some('\u{2192}')
+  "euro" -> Some('\u{20ac}')
+  "pound" -> Some('\u{a3}')
+  "yen" -> Some('\u{a5}')
+  _ -> numeric_entity(name)
+}
+
+# `&#8212;` and `&#x2014;` name the codepoint outright.
+fn numeric_entity(name: String) : Option[Char] = match chars(name) {
+  ['#', 'x', ...digits] -> from_radix(digits, 16, 0).map(n => int_to_char(n))
+  ['#', 'X', ...digits] -> from_radix(digits, 16, 0).map(n => int_to_char(n))
+  ['#', ...digits] -> from_radix(digits, 10, 0).map(n => int_to_char(n))
+  _ -> None
+}
+
+fn from_radix(cs: [Char], radix: Int, acc: Int) : Option[Int] = match cs {
+  [] -> if acc > 0 and acc <= 1114111 { Some(acc) } else { None }
+  [c, ...t] -> match digit_value(c) {
+    Some(v) -> if v >= radix { None } else { from_radix(t, radix, acc * radix + v) }
+    None -> None
+  }
+}
+
+fn digit_value(c: Char) : Option[Int] =
+  if is_digit(c) {
+    Some(char_to_int(c) - char_to_int('0'))
+  } else if c >= 'a' and c <= 'f' {
+    Some(10 + char_to_int(c) - char_to_int('a'))
+  } else if c >= 'A' and c <= 'F' {
+    Some(10 + char_to_int(c) - char_to_int('A'))
+  } else {
+    None
+  }
+
+# ---- Cutting ----
 
 # Cuts at the first `close`, honouring escapes: `\*` does not close an
 # emphasis. Returns (content, what follows the delimiter).
@@ -139,7 +338,7 @@ fn word_edge(buf: [Char]) : Bool = match head(buf) {
 fn escapable(c: Char) : Bool =
   contains(
     [
-      '\\', '`', '*', '_', '[', ']', '(', ')', '#', '+', '-', '.', '!', '>', '~',
+      '\\', '`', '*', '_', '[', ']', '(', ')', '#', '+', '-', '.', '!', '>', '<', '~', '&',
       '|'
     ],
     c

@@ -7,12 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A markdown viewer for the terminal in the spirit of
 [glow](https://github.com/charmbracelet/glow), written in **kaikai**. Two modes, like
 glow: a CLI that renders a file (or stdin) to ANSI and exits, and a pager that walks it on
-screen.
+screen. Pointed at a directory — or at nothing — it opens a picker over the markdown
+under it instead.
 
-**Actual state:** the CLI and the pager work end to end — arguments, block parser, inline
-scanner, theme, ANSI renderer and paging over terevaka, with 53 tests and 2 property
-checks green. What is missing is the **file finder** (`mark/finder.kai` over
-`fs.dir.walk`): with no arguments `mark` prints the help, and that is where it would go.
+**Actual state:** complete for what it set out to do — arguments, block parser, inline
+scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 70 tests
+and 2 property checks green.
+
+**Not supported, and knowingly:** images. `![alt](src)` renders as its label and
+destination with the `!` in front, which is a link with a stray mark on it; what a
+terminal should do with an image is undecided rather than unimplemented.
 
 Deliberately out of scope: automatic light/dark background detection via OSC 11 —
 `--style` settles it by hand.
@@ -118,7 +122,9 @@ argv/stdin/file            parse           render             output
   pure function over `[String]`. What depends on the environment is left unset
   (`width == 0`, `style == "auto"`) for `main` to resolve.
 - `mark/ast.kai` — blocks (heading, paragraph, list, code fence, quote, table, rule) and
-  inline (emphasis, code, link).
+  inline (emphasis, strikethrough, code, link, hard break). Two of its shapes exist to be
+  resolved away rather than rendered: `Item.task` is the box a list item opened with, and
+  `Ref` is a reference link that `parse` settles once every definition has been read.
 - `mark/parser.kai` — `String -> [Block]`. Containers de-indent their lines and re-enter
   `blocks`, so nesting falls out of the recursion. Two shapes are decided by position
   rather than by prefix, and both live where the ambiguity is: a setext underline is
@@ -135,6 +141,9 @@ argv/stdin/file            parse           render             output
 - `mark/pager.kai` — the viewport over the already-rendered lines. `Model`, `scroll`,
   `viewport`, `status` and `step` are **pure**; only `run` touches the terminal, so
   scrolling is tested by equality with no TUI to stand up.
+- `mark/finder.kai` — the picker over the markdown files under a root. Same split as the
+  pager: `Model`, `move_to`, `viewport`, `status` and `step` are **pure**, and only `run`
+  touches a terminal. Its walk is `File`, not `Ffi` — `fs.dir.walk` and nothing else.
 - `mark/tty.kai` — where terminal questions live. `is_terminal` rides `Stdout.is_tty()`,
   but the size still needs terevaka's shim, so this is the only module carrying `Ffi`.
 - `main.kai` — the only place declaring the full effect row.

@@ -1,0 +1,60 @@
+import mark.finder
+import terevaka.term
+
+fn docs() : [String] = ["/r/a.md", "/r/sub/b.md", "/r/sub/c.md", "/r/d.md"]
+
+fn m3() : finder.Model = finder.model(docs(), "/r", 4)
+
+test "an entry shows the path it does not share with the root" {
+  let m = m3()
+  assert finder.shown(m, "/r/sub/b.md") == "sub/b.md"
+  # A root with a trailing slash cuts the same.
+  assert finder.shown(finder.model(docs(), "/r/", 4), "/r/sub/b.md") == "sub/b.md"
+  # A path from somewhere else is left whole rather than mangled.
+  assert finder.shown(m, "/elsewhere/x.md") == "/elsewhere/x.md"
+}
+
+test "the cursor stays inside the list" {
+  let m = m3()
+  assert finder.move_to(m, 0 - 5).cur == 0
+  assert finder.move_to(m, 99).cur == 3
+  assert finder.move_to(m, 2).cur == 2
+}
+
+test "the window follows the cursor, and no further" {
+  let m = m3()
+  # Three body rows: moving to the fourth entry drags the top by one.
+  assert m.height == 3
+  assert finder.move_to(m, 3).top == 1
+  assert finder.move_to(m, 2).top == 0
+  # Coming back up drags it the other way.
+  assert finder.move_to(finder.move_to(m, 3), 0 - 3).top == 0
+}
+
+test "the viewport is the window, relative to the root" {
+  assert finder.viewport(m3()) == ["a.md", "sub/b.md", "sub/c.md"]
+  assert finder.viewport(finder.move_to(m3(), 3)) == ["sub/b.md", "sub/c.md", "d.md"]
+}
+
+test "a key is a decision: stay, open, or leave" {
+  let m = m3()
+  assert finder.step(m, Printable('q')) == Leave
+  assert finder.step(m, Esc) == Leave
+  assert finder.step(m, Enter) == Open("/r/a.md")
+  assert finder.step(finder.move_to(m, 1), Enter) == Open("/r/sub/b.md")
+  assert finder.step(m, Printable('j')) == Stay(finder.move_to(m, 1))
+  assert finder.step(m, Printable('G')) == Stay(finder.move_to(m, 4))
+}
+
+test "an empty list has nothing to open" {
+  let empty = finder.model([], "/r", 4)
+  assert finder.current(empty) == None
+  assert finder.step(empty, Enter) == Leave
+  assert finder.viewport(empty) == []
+}
+
+test "the status bar is cut to the width, never past it" {
+  let m = m3()
+  assert finder.status(m, 30).length() == 30
+  assert finder.status(m, 8).length() == 8
+}

@@ -15,8 +15,122 @@ import mark.inline
 # What a recogniser returns: the block, and the lines still unconsumed.
 type Parsed = (ast.Block, [String])
 
-#[doc("Parses a whole markdown document.")]
-pub fn parse(src: String) : [ast.Block] = blocks(lines(src))
+# A label and the destination its definition gave it. A document holds a
+# handful of these, so a list walked linearly beats a map that would have
+# to be built and imported for it.
+type Defs = [(String, String)]
+
+#[doc("""
+Parses a whole markdown document.
+
+Three passes, in the order the format forces: the front matter is not
+markdown and comes off first; the link reference definitions are
+gathered next, because `[text][label]` may precede the `[label]:` line
+that explains it; and only then do the blocks get read and their
+references settled.
+""")]
+pub fn parse(src: String) : [ast.Block] {
+  let (defs, body) = take_definitions(strip_front_matter(lines(src)), [], [], false)
+  blocks(body) | (b => resolve_block(defs, b))
+}
+
+# ---- Front matter ----
+
+# A `---` fence on the very first line opens a metadata block that is
+# YAML or TOML, never markdown. Without a closing fence there was no
+# front matter at all — just a rule and a document under it.
+fn strip_front_matter(ls: [String]) : [String] = match ls {
+  [first, ...rest] ->
+    if trim(first) == "---" {
+      match index_of(rest, l => trim(l) == "---" or trim(l) == "...") {
+        Some(i) -> drop(rest, i + 1)
+        None -> ls
+      }
+    } else {
+      ls
+    }
+  [] -> ls
+}
+
+# ---- Link reference definitions ----
+
+# `[label]: destination` is not content: it explains a reference that may
+# be anywhere in the document. The line is blanked rather than removed,
+# so the blocks around it stay as separated as the source left them, and
+# a fence is tracked because inside one the same text is code.
+fn take_definitions(ls: [String], defs: Defs, out: [String], fenced: Bool) : (Defs, [String]) =
+  match ls {
+    [] -> (reverse(defs), reverse(out))
+    [l, ...t] -> {
+      let fence = fence_marker(l) != None
+      match if fenced or fence { None } else { definition(l) } {
+        Some(d) -> take_definitions(t, [d, ...defs], ["", ...out], fenced)
+        None -> take_definitions(t, defs, [l, ...out], if fence { not fenced } else { fenced })
+      }
+    }
+  }
+
+fn definition(l: String) : Option[(String, String)] {
+  let t = trim(l)
+  if not starts_with(t, "[") {
+    None
+  } else {
+    match char_index_of(t, "]:") {
+      None -> None
+      Some(i) -> {
+        let label = slice(t, 1, i - 1)
+        let rest = trim(slice(t, i + 2, chars(t).length() - i - 2))
+        if is_empty(trim(label)) or is_empty(rest) {
+          None
+        } else {
+          Some((inline.fold_label(label), first_word(rest)))
+        }
+      }
+    }
+  }
+}
+
+# The destination runs to the first space; a title may follow it, and it
+# says nothing the label has not said already.
+fn first_word(s: String) : String = match char_index_of(s, " ") {
+  Some(i) -> slice(s, 0, i)
+  None -> s
+}
+
+# ---- Resolving references ----
+
+# `Ref` is the scanner admitting it could not know yet. Here every
+# definition has been read, so each one becomes the link it meant — or,
+# with nothing to match, the literal brackets the source typed.
+fn resolve_block(defs: Defs, b: ast.Block) : ast.Block = match b {
+  Heading(n, xs) -> Heading(n, resolve(defs, xs))
+  Para(xs) -> Para(resolve(defs, xs))
+  Quote(inner) -> Quote(inner | (x => resolve_block(defs, x)))
+  Bullets(items) -> Bullets(items | (it => resolve_item(defs, it)))
+  Ordered(n, items) -> Ordered(n, items | (it => resolve_item(defs, it)))
+  Table(head, aligns, body) ->
+    Table(head | (c => resolve(defs, c)), aligns, body | (r => resolve_row(defs, r)))
+  other -> other
+}
+
+fn resolve_row(defs: Defs, r: [[ast.Inline]]) : [[ast.Inline]] = r | (c => resolve(defs, c))
+
+fn resolve_item(defs: Defs, it: ast.Item) : ast.Item =
+  ast.Item { ...it, blocks: it.blocks | (b => resolve_block(defs, b)) }
+
+fn resolve(defs: Defs, xs: [ast.Inline]) : [ast.Inline] = xs || (x => resolve_one(defs, x))
+
+fn resolve_one(defs: Defs, x: ast.Inline) : [ast.Inline] = match x {
+  Ref(label, key) -> match find_map(defs, d => if d.fst == key { Some(d.snd) } else { None }) {
+    Some(dest) -> [Link(resolve(defs, label), dest)]
+    None -> [Text("["), ...resolve(defs, label), Text("]")]
+  }
+  Emph(inner) -> [Emph(resolve(defs, inner))]
+  Strong(inner) -> [Strong(resolve(defs, inner))]
+  Strike(inner) -> [Strike(resolve(defs, inner))]
+  Link(label, dest) -> [Link(resolve(defs, label), dest)]
+  other -> [other]
+}
 
 fn blocks(ls: [String]) : [ast.Block] = match ls {
   [] -> []
@@ -209,7 +323,7 @@ fn ordered_start(l: String) : Option[Int] {
 
 # `acc` gathers items backwards and is reversed on the way out; the
 # append form would copy every item collected so far on each one.
-fn take_bullets(ls: [String], acc: [[ast.Block]]) : Parsed {
+fn take_bullets(ls: [String], acc: [ast.Item]) : Parsed {
   let l = first_line(ls)
   if bullet_marker(l) == None or is_rule(l) {
     (Bullets(reverse(acc)), ls)
@@ -219,7 +333,7 @@ fn take_bullets(ls: [String], acc: [[ast.Block]]) : Parsed {
   }
 }
 
-fn take_ordered(ls: [String], start: Int, acc: [[ast.Block]]) : Parsed {
+fn take_ordered(ls: [String], start: Int, acc: [ast.Item]) : Parsed {
   let l = first_line(ls)
   if ordered_start(l) == None {
     (Ordered(start, reverse(acc)), ls)
@@ -236,12 +350,27 @@ fn marker_width(l: String, mark_len: Int) : Int =
   l.length() - trim_left(l).length() + mark_len
 
 # An item: its first line without the marker, plus the following
-# indented lines belonging to it, all reparsed as blocks.
-fn take_item(ls: [String], indent: Int) : ([ast.Block], [String]) {
+# indented lines belonging to it, all reparsed as blocks. A task box
+# comes off the front of that first line — it is the item's state, not
+# a pair of brackets in its text.
+fn take_item(ls: [String], indent: Int) : (ast.Item, [String]) {
   let l = first_line(ls)
-  let head = slice(l, indent, l.length() - indent)
+  let (task, head) = task_box(slice(l, indent, l.length() - indent))
   let (body, rest) = take_continuation(drop(ls, 1), indent, [])
-  (blocks([head, ...body]), rest)
+  (ast.Item { task: task, blocks: blocks([head, ...body]) }, rest)
+}
+
+# `[ ] ` and `[x] ` open a task item; the space after the box is what
+# keeps a paragraph opening with a reference from becoming one.
+fn task_box(head: String) : (Option[Bool], String) {
+  let t = trim_left(head)
+  if starts_with(t, "[ ] ") {
+    (Some(false), slice(t, 4, chars(t).length() - 4))
+  } else if starts_with(t, "[x] ") or starts_with(t, "[X] ") {
+    (Some(true), slice(t, 4, chars(t).length() - 4))
+  } else {
+    (None, head)
+  }
 }
 
 fn take_continuation(ls: [String], indent: Int, acc: [String]) : ([String], [String]) =
@@ -373,7 +502,7 @@ fn take_para(ls: [String], acc: [String]) : Parsed = match ls {
         if acc.length() > 0 and (is_blank(h) or interrupts_para(h)) {
           (para_of(acc), ls)
         } else {
-          take_para(t, [trim(h), ...acc])
+          take_para(t, [h, ...acc])
         }
     }
 }
@@ -399,9 +528,34 @@ fn setext_level(l: String) : Option[Int] {
   }
 }
 
-# The lines arrive backwards, joined by a space: a paragraph's newlines
-# are not breaks, the renderer decides where it wraps.
-fn para_text(acc: [String]) : String = join(reverse(acc), " ")
+# The lines arrive backwards and untrimmed, because the trailing spaces
+# are the message: two of them, or a closing backslash, are how the
+# source insists on a break. Every other newline is a space — the
+# renderer decides where the text wraps.
+fn para_text(acc: [String]) : String = join(weave(reverse(acc), []), "")
+
+# The separator is pushed as a fragment of its own rather than glued to
+# the line: the join at the end walks them all once anyway, and a fresh
+# string per line is what a long paragraph cannot afford.
+fn weave(ls: [String], out: [String]) : [String] = match ls {
+  [] -> reverse(out)
+  [l] -> reverse([trim(l), ...out])
+  [l, ...t] -> {
+    let hard = hard_break(l)
+    weave(t, [if hard { "\n" } else { " " }, body_of(l, hard), ...out])
+  }
+}
+
+# Both spellings show at the end of the raw line, so recognising either
+# costs no copy of it.
+fn hard_break(l: String) : Bool = ends_with(l, "  ") or ends_with(l, "\\")
+
+# The backslash spelling of a break is not part of the text it breaks.
+# An ordinary line pays only for the trim it always paid for.
+fn body_of(l: String, hard: Bool) : String {
+  let t = trim(l)
+  if hard { trim(drop_suffix(t, "\\").unwrap_or(t)) } else { t }
+}
 
 fn para_of(acc: [String]) : ast.Block = Para(inline.scan(para_text(acc)))
 

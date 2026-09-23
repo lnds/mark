@@ -1,6 +1,9 @@
 import mark.parser
 import mark.ast
 
+# An ordinary list item: no task box, just its blocks.
+fn li(bs: [ast.Block]) : ast.Item = ast.Item { task: None, blocks: bs }
+
 test "headings by level, with an optional closing run" {
   assert parser.parse("# Hello") == [Heading(1, [Text("Hello")])]
   assert parser.parse("### Three") == [Heading(3, [Text("Three")])]
@@ -67,20 +70,21 @@ test "quotes, nested ones included" {
 
 test "bullet and ordered lists" {
   let bullets = parser.parse("- one\n- two")
-  assert bullets == [Bullets([[Para([Text("one")])], [Para([Text("two")])]])]
+  assert bullets == [Bullets([li([Para([Text("one")])]), li([Para([Text("two")])])])]
   let ordered = parser.parse("1. one\n2. two")
-  assert ordered == [Ordered(1, [[Para([Text("one")])], [Para([Text("two")])]])]
-  assert parser.parse("3) three") == [Ordered(3, [[Para([Text("three")])]])]
+  assert ordered == [Ordered(1, [li([Para([Text("one")])]), li([Para([Text("two")])])])]
+  assert parser.parse("3) three") == [Ordered(3, [li([Para([Text("three")])])])]
 }
 
 test "an item takes an indented sublist" {
   let nested = parser.parse("- one\n  - nested")
-  assert nested == [Bullets([[Para([Text("one")]), Bullets([[Para([Text("nested")])]])]])]
+  assert nested
+    == [Bullets([li([Para([Text("one")]), Bullets([li([Para([Text("nested")])])])])])]
 }
 
 test "a list interrupts the preceding paragraph with no blank line" {
   let mixed = parser.parse("text\n- item")
-  assert mixed == [Para([Text("text")]), Bullets([[Para([Text("item")])]])]
+  assert mixed == [Para([Text("text")]), Bullets([li([Para([Text("item")])])])]
 }
 
 test "tables: the delimiter row is what makes one" {
@@ -147,3 +151,52 @@ test "blocks carry their content already scanned into inline nodes" {
 }
 
 fn main() : Int = 0
+
+test "front matter is metadata, not a heading over a rule" {
+  let d = parser.parse("---\ntitle: x\n---\n\n# Real")
+  assert d == [Heading(1, [Text("Real")])]
+  # With nothing to close it, the `---` was only ever a rule.
+  assert parser.parse("---\nloose") == [Rule, Para([Text("loose")])]
+}
+
+test "a reference finds its definition, wherever the definition sits" {
+  let back = parser.parse("see [the docs][d]\n\n[d]: https://example.org")
+  assert back == [Para([Text("see "), Link([Text("the docs")], "https://example.org")])]
+  # The label may carry the reference on its own, in either case.
+  let collapsed = parser.parse("[Docs][]\n\n[docs]: https://example.org")
+  assert collapsed == [Para([Link([Text("Docs")], "https://example.org")])]
+  let shortcut = parser.parse("[docs]\n\n[docs]: https://example.org")
+  assert shortcut == [Para([Link([Text("docs")], "https://example.org")])]
+}
+
+test "a reference with no definition keeps its brackets" {
+  assert parser.parse("[nope]") == [Para([Text("["), Text("nope"), Text("]")])]
+}
+
+test "a definition inside a fence is code, not a definition" {
+  let d = parser.parse("```\n[x]: https://example.org\n```\n\n[x]")
+  assert d
+    == [
+      Code("", ["[x]: https://example.org"]),
+      Para([Text("["), Text("x"), Text("]")])
+    ]
+}
+
+test "task boxes belong to the item, and a list may mix them" {
+  let d = parser.parse("- [ ] todo\n- [x] done\n- plain")
+  assert d
+    == [
+      Bullets([
+        ast.Item { task: Some(false), blocks: [Para([Text("todo")])] },
+        ast.Item { task: Some(true), blocks: [Para([Text("done")])] },
+        li([Para([Text("plain")])])
+      ])
+    ]
+}
+
+test "two trailing spaces are a break the wrap may not undo" {
+  assert parser.parse("one  \ntwo") == [Para([Text("one"), Break, Text("two")])]
+  assert parser.parse("one\\\ntwo") == [Para([Text("one"), Break, Text("two")])]
+  # One trailing space is not two: the lines still join.
+  assert parser.parse("one \ntwo") == [Para([Text("one two")])]
+}

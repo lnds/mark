@@ -1,0 +1,148 @@
+#[doc("""
+The file finder: what `mark` does when it is pointed at a directory
+instead of a document.
+
+Same split as the pager, for the same reason. `Model`, `move_to`,
+`viewport`, `status` and `step` are **pure**, so choosing a file is
+tested by equality with no terminal to stand up; `run` is the only part
+that touches one, and the only part carrying an effect.
+
+The walk itself is `File`, not `Ffi`: it is `fs.dir.walk` and nothing
+more, so the list can be built anywhere a file can be read.
+""")]
+
+import fs.dir
+import math.int
+import terevaka.app
+import terevaka.term
+import terevaka.ui
+
+#[doc("""
+The suffixes a markdown file is written with. `.mdown` and `.mkd` are
+here because the tree being browsed did not necessarily choose `.md`.
+""")]
+pub fn suffixes() : [String] = [".md", ".markdown", ".mdown", ".mkd"]
+
+#[doc("""
+Every markdown file under `root`, depth-first and then sorted, so the
+list does not depend on the order the filesystem happened to hand them
+over. A directory that holds none yields `[]`, which the caller reports
+rather than opening an empty picker on.
+""")]
+pub fn markdown_files(root: String) : [String] / File =
+  sort(dir.walk(root) |? is_markdown)
+
+fn is_markdown(path: String) : Bool = any(suffixes(), s => ends_with(to_lower(path), s))
+
+#[doc("""
+The list and the window onto it. `cur` is the highlighted entry and
+`top` the first visible one; `height` is the body rows, not counting the
+status bar.
+""")]
+#[derive(Eq, Show)]
+pub type Model = { files: [String], root: String, cur: Int, top: Int, height: Int }
+
+#[doc("Opens the picker on the first entry.")]
+pub fn model(files: [String], root: String, rows: Int) : Model =
+  Model { files: files, root: root, cur: 0, top: 0, height: int.max(rows - 1, 1) }
+
+#[doc("""
+Moves the cursor `delta` entries, without leaving the list, and drags
+the window along only as far as it must to keep the cursor in view.
+""")]
+pub fn move_to(m: Model, delta: Int) : Model {
+  let cur = clamp(m.cur + delta, 0, int.max(m.files.length() - 1, 0))
+  Model { ...m, cur: cur, top: clamp(m.top, cur - m.height + 1, cur) }
+}
+
+#[doc("The visible entries, each as it is shown: relative to the root.")]
+pub fn viewport(m: Model) : [String] = take(drop(m.files, m.top), m.height) | (f => shown(m, f))
+
+#[doc("""
+The entry the cursor is on, or `None` for an empty list — which is the
+one case `run` never opens a picker for.
+""")]
+pub fn current(m: Model) : Option[String] = nth(m.files, m.cur)
+
+#[doc("How an entry reads on screen: its path, less the root it shares.")]
+pub fn shown(m: Model, path: String) : String =
+  drop_prefix(path, "#{drop_suffix(m.root, "/").unwrap_or(m.root)}/").unwrap_or(path)
+
+#[doc("The status bar: where the cursor is in the list, and the keys.")]
+pub fn status(m: Model, width: Int) : String {
+  let left = "#{m.root}  #{int.min(m.cur + 1, m.files.length())}/#{m.files.length()}"
+  ui.cell(fit_both(left, "j/k move · enter open · q quit", width), width)
+}
+
+# With room to spare the keys align right; otherwise they are dropped
+# rather than letting the bar spill onto the next line.
+fn fit_both(left: String, keys: String, width: Int) : String {
+  let gap = width - ui.visible_len(left) - ui.visible_len(keys) - 2
+  if gap >= 0 { "#{left}#{repeat(" ", gap + 2)}#{keys}" } else { left }
+}
+
+#[doc("""
+What a key decides. `Stay` keeps the picker open on a new model, `Open`
+hands back the file to render, and `Leave` closes it with nothing
+chosen.
+""")]
+#[derive(Eq, Show)]
+pub type Choice = Stay(Model) | Open(String) | Leave
+
+#[doc("Turns a key into a decision about the picker.")]
+pub fn step(m: Model, k: term.Key) : Choice = match k {
+  Printable('q') -> Leave
+  Esc -> Leave
+  Enter -> open(m)
+  Printable('o') -> open(m)
+  Printable('l') -> open(m)
+  Right -> open(m)
+  Printable('j') -> Stay(move_to(m, 1))
+  Down -> Stay(move_to(m, 1))
+  Printable('k') -> Stay(move_to(m, 0 - 1))
+  Up -> Stay(move_to(m, 0 - 1))
+  Printable(' ') -> Stay(move_to(m, m.height))
+  Printable('f') -> Stay(move_to(m, m.height))
+  Printable('b') -> Stay(move_to(m, 0 - m.height))
+  Printable('g') -> Stay(move_to(m, 0 - m.files.length()))
+  Printable('G') -> Stay(move_to(m, m.files.length()))
+  _ -> Stay(move_to(m, 0))
+}
+
+fn open(m: Model) : Choice = match current(m) {
+  Some(f) -> Open(f)
+  None -> Leave
+}
+
+#[doc("""
+Opens the picker and returns the file chosen, or `None` if it was left
+without choosing one.
+
+`app.run` owns the loop and gives nothing back, so the choice is
+recorded in a cell the update closes over — the one piece of state here
+that is not carried in the model.
+""")]
+pub fn run(files: [String], root: String, rows: Int, width: Int) : Option[String] / Ffi {
+  var chosen := None
+  app.run(
+    model(files, root, rows),
+    (m, k) => match step(m, k) {
+      Stay(next) -> app.keep(next)
+      Open(f) -> {
+        chosen := Some(f)
+        app.quit()
+      }
+      Leave -> app.quit()
+    },
+    m => ui.col((rows_of(m) | ui.text) ++ [ui.text(status(m, width))]),
+    120
+  )
+  chosen
+}
+
+# The cursor is drawn rather than coloured: a picker whose highlight is
+# a background needs the theme, and this one is a terminal away from it.
+fn rows_of(m: Model) : [String] =
+  enumerate(viewport(m)) | (p => "#{if m.top + p.fst == m.cur { "> " } else { "  " }}#{p.snd}")
+
+fn clamp(v: Int, lo: Int, hi: Int) : Int = int.max(lo, int.min(v, hi))

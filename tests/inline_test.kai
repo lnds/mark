@@ -30,7 +30,9 @@ test "an unclosed delimiter degrades to text, losing no content" {
   assert inline.scan("*abc") == [Text("*abc")]
   assert inline.scan("`abc") == [Text("`abc")]
   assert inline.scan("[abc") == [Text("[abc")]
-  assert inline.scan("[t]no destination") == [Text("[t]no destination")]
+  # A bare `[label]` may still be a reference: only `parser.parse`, which
+  # has read every definition, can rule that out.
+  assert inline.scan("[t]no destination") == [Ref([Text("t")], "t"), Text("no destination")]
 }
 
 test "escapes turn a delimiter literal" {
@@ -49,3 +51,42 @@ test "a node nests the others" {
 }
 
 fn main() : Int = 0
+
+test "strikethrough is a delimiter like the others" {
+  assert inline.scan("~~gone~~") == [Strike([Text("gone")])]
+  assert inline.scan("~~a~~ b") == [Strike([Text("a")]), Text(" b")]
+  # Unclosed, or slack against the delimiter, it is text.
+  assert inline.scan("~~open") == [Text("~~open")]
+  assert inline.scan("~~ no ~~") == [Text("~~ no ~~")]
+}
+
+test "a link title is dropped, its destination is not" {
+  assert inline.scan("[a](b \"the title\")") == [Link([Text("a")], "b")]
+  assert inline.scan("[a](<b c>)") == [Link([Text("a")], "b")]
+}
+
+test "autolinks and bare URLs are links the source spelled out" {
+  assert inline.scan("<https://x.example>")
+    == [Link([Text("https://x.example")], "https://x.example")]
+  assert inline.scan("<a@b.example>") == [Link([Text("a@b.example")], "mailto:a@b.example")]
+  assert inline.scan("see https://x.example now")
+    == [Text("see "), Link([Text("https://x.example")], "https://x.example"), Text(" now")]
+  # The full stop ended the sentence, not the address.
+  assert inline.scan("at https://x.example.")
+    == [Text("at "), Link([Text("https://x.example")], "https://x.example"), Text(".")]
+}
+
+test "a tag is dropped and its text kept; a lone angle is text" {
+  assert inline.scan("a <em>word</em> here") == [Text("a word here")]
+  assert inline.scan("<!-- hidden -->x") == [Text("x")]
+  assert inline.scan("a < b and c > d") == [Text("a < b and c > d")]
+}
+
+test "entities decode, named and numeric alike" {
+  assert inline.scan("a &amp; b") == [Text("a & b")]
+  assert inline.scan("&hellip;&mdash;") == [Text("…—")]
+  assert inline.scan("&#8212;&#x2014;") == [Text("——")]
+  # A name that is not one keeps its ampersand.
+  assert inline.scan("a &nope; b") == [Text("a &nope; b")]
+  assert inline.scan("AT&T") == [Text("AT&T")]
+}

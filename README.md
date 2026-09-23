@@ -5,10 +5,13 @@ A markdown viewer for the terminal, in the spirit of
 [kaikai](https://kaikai-lang.org).
 
 Two modes, like glow: a CLI that renders a file (or stdin) to ANSI and exits,
-and a pager that walks it on screen.
+and a pager that walks it on screen. Pointed at a directory — or at nothing at
+all — it opens a picker over the markdown under it instead.
 
 ```sh
 mark README.md          # render, paging if it does not fit
+mark                    # pick a file from the tree at hand
+mark docs/               # pick one from somewhere else
 mark -w 100 doc.md      # at a given width
 cat doc.md | mark -     # from stdin
 mark -P doc.md | less    # dump, no pager
@@ -94,6 +97,8 @@ bash and fish have no such collision; there the completion only adds.
 ```
 usage:
   mark <file.md>         render a file
+  mark <dir>             choose a file from the tree under it
+  mark                   the same, for the directory at hand
   mark -                 render whatever arrives on stdin
   mark -h | --help       this help
   mark -v | --version    the version
@@ -109,6 +114,11 @@ options:
 In the pager: `j`/`k` or arrows scroll a line, `space`/`b` a page, `d`/`u` half
 a page, `g`/`G` jump to the ends, `q` or `Esc` quits.
 
+In the file picker the same keys move, `enter` opens the entry under the cursor
+and `q` leaves without opening anything. It lists `.md`, `.markdown`, `.mdown`
+and `.mkd`, recursively, sorted — and, needing a terminal to choose in, it says
+so instead of opening when there is none.
+
 Paging happens when there is a terminal to page in and the document does not fit
 in it — never when the input came from stdin, since the pager reads its keys
 from that same descriptor and by then it is exhausted.
@@ -120,9 +130,25 @@ file, off when `NO_COLOR` is set, and whatever `--color` says over all of it.
 
 Headings — both `#` and the underlined setext form — paragraphs with word
 wrapping, code both fenced and indented four spaces, nested quotes, bullet and
-ordered lists with sublists, tables, horizontal rules; and inline: emphasis,
-strong, code spans, links (with the destination shown, since a terminal has
-nowhere to hide it) and backslash escapes.
+ordered lists with sublists and task boxes, tables, horizontal rules; and
+inline: emphasis, strong, strikethrough, code spans, links, character entities
+and backslash escapes. A YAML or TOML front matter block is metadata and is
+skipped rather than shown.
+
+Links come in every spelling: `[text](dest)`, the reference forms
+`[text][label]`, `[label][]` and a bare `[label]` resolved against a
+`[label]: dest` line anywhere in the document, `<https://autolinks>` and bare
+addresses written with no markup at all. The destination is printed after the
+label, since a terminal has nowhere to hide it — except where the label already
+is the destination, which is every autolink. A reference nothing defines keeps
+its brackets rather than vanishing. Two trailing spaces, or a trailing
+backslash, break the line where the source insists on it.
+
+HTML is not rendered and not shown either: a tag is dropped and the text inside
+it kept, so a paragraph wrapped in `<div>` reads as the sentence it holds.
+
+**Images are not supported.** `![alt](src)` comes out as a link with a stray `!`
+in front of it.
 
 Tables are drawn with a box-drawing frame and honour the alignments the
 delimiter row declares (`:--`, `:-:`, `--:`). A table too wide for the terminal

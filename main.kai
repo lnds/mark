@@ -6,6 +6,7 @@ depends on the terminal (width, colour), hands the text to the pure
 parse -> render pipeline, and writes the result out.
 """)]
 
+import fs.dir
 import math.int
 import os.args
 import os.env
@@ -15,6 +16,7 @@ import mark.render
 import mark.theme
 import mark.tty
 import mark.pager
+import mark.finder
 
 # Drains stdin line by line to EOF, gathering backwards so the join is
 # the only pass over the whole input.
@@ -27,9 +29,21 @@ fn load(src: cli.Source) : Result[String, String] / File + Stdin {
   case ShowHelp -> Ok(cli.help_text())
   case ShowVersion -> Ok("mark #{cli.VERSION}")
   case FromStdin -> Ok(read_stdin([]))
-  case FromFile(p) -> File.read_file(p).map_err(e => "mark: cannot read #{p}: #{e}")
+  case FromFile(p) -> File.read_file(p).map_err(e => failure(p, e))
   case Invalid(msg) -> Err("mark: #{msg}")
+  # `resolve` has already turned this into a file, the help or nothing.
+  case Browse(_) -> Ok(cli.help_text())
 }
+
+# An empty directory reaches here rather than the finder, which asks the
+# filesystem for its entries and is told there are none. The message it
+# gets back says so plainly instead of quoting a syscall at it.
+fn failure(path: String, e: String) : String =
+  if char_index_of(e, "is a directory") != None {
+    "mark: #{path} is a directory with no markdown in it"
+  } else {
+    "mark: cannot read #{path}: #{e}"
+  }
 
 # Text that is already the final output — the help, the version — does
 # not go through the renderer: reformatting it would only spoil it.
@@ -93,25 +107,61 @@ fn name_of(src: cli.Source) : String {
   case _ -> "(stdin)"
 }
 
+# A directory is a place to choose a document from, not a document. So
+# is no argument at all, which means the directory at hand — unless
+# there is no terminal to choose in, and then the help is the only
+# useful answer.
+fn resolve(src: cli.Source) : Option[cli.Source] / File + Ffi + Stdout = match src {
+  Browse(root) -> if tty.is_terminal() { pick(root) } else { Some(ShowHelp) }
+  FromFile(p) ->
+    if not is_directory(p) {
+      Some(src)
+    } else if tty.is_terminal() {
+      pick(p)
+    } else {
+      Some(Invalid("#{p} is a directory, and choosing from one needs a terminal"))
+    }
+  _ -> Some(src)
+}
+
+# `None` is the picker closed without a choice: nothing to report and
+# nothing to render, which is not a failure.
+fn pick(root: String) : Option[cli.Source] / File + Ffi {
+  let files = finder.markdown_files(root)
+  if files.is_empty() {
+    Some(Invalid("no markdown files under #{root}"))
+  } else {
+    let rows = pager.body_rows(tty.rows()) + 1
+    finder.run(files, root, rows, tty.columns() - pager.margin()).map(f => FromFile(f))
+  }
+}
+
+# `fs.dir.list_dir` answers with the entries or with nothing at all, so
+# an empty directory reads as a file here and is caught by the read.
+fn is_directory(path: String) : Bool / File = not dir.list_dir(path).is_empty()
+
 fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi {
   let opts = cli.parse_args(args.argv())
-  match load(opts.source) {
-    Err(msg) -> {
-      Stderr.eprint(msg)
-      1
-    }
-    Ok(text) -> {
-      if verbatim(opts.source) {
-        Stdout.print(text)
-      } else {
-        let lines = render.render(theme_for(opts), width_for(opts), parser.parse(text))
-        if paginate(opts, opts.source, lines.length()) {
-          pager.run(lines, name_of(opts.source))
-        } else {
-          foreach(lines, l => Stdout.print(l))
-        }
+  match resolve(opts.source) {
+    None -> 0
+    Some(src) -> match load(src) {
+      Err(msg) -> {
+        Stderr.eprint(msg)
+        1
       }
-      0
+      Ok(text) -> {
+        if verbatim(src) {
+          Stdout.print(text)
+        } else {
+          let lines = render.render(theme_for(opts), width_for(opts), parser.parse(text))
+          if paginate(opts, src, lines.length()) {
+            pager.run(lines, name_of(src))
+          } else {
+            foreach(lines, l => Stdout.print(l))
+          }
+        }
+        0
+      }
     }
   }
 }
