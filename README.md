@@ -109,7 +109,8 @@ options:
       --color <when>     auto | always | never (NO_COLOR also disables it)
   -p, --pager            page even when the text fits on screen
   -P, --no-pager         dump everything at once, without paging
-      --images <when>    auto | kitty | iterm | never (a drawn one skips the pager)
+      --images <when>    auto | kitty | iterm | never (a drawn one skips the pager,
+                         unless -p asked for it)
 ```
 
 In the pager: `j`/`k` or arrows scroll a line, `space`/`b` a page, `d`/`u` half
@@ -159,6 +160,8 @@ its alt text, because an escape sequence occupies no columns and measuring it
 would break the wrap around it. The same fallback covers a terminal that
 cannot draw, a file that cannot be read, output that is not a terminal, and
 the pager — whose repaint measures its lines and has nothing to measure here.
+A drawn picture displaces the pager mark would have opened on its own, but not
+a `-p` that asked for it by name.
 See `examples/images.md`.
 
 Tables are drawn with a box-drawing frame and honour the alignments the

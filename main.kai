@@ -178,8 +178,13 @@ fn is_directory(path: String) : Bool / File = not dir.list_dir(path).is_empty()
 # A document with a picture in it is dumped rather than paged, and that
 # is a choice: the pager repaints by measuring its lines, and the escape
 # sequence that draws a picture has no width to measure. Paging one
-# would mean showing the alt text instead — so the picture wins, since
-# it is what the reader asked for, and the scrollback is still there.
+# would mean showing the alt text instead — so the picture wins over the
+# pager mark would have opened on its own, and the scrollback keeps the
+# rest.
+#
+# It does not win over a `-p` that asked for the pager by name. An
+# explicit flag that goes quietly ignored is worse than either outcome
+# it was choosing between.
 #
 # The terminal is asked only when the document has something to draw.
 # The query costs a round trip, and a silent terminal costs the whole
@@ -191,7 +196,12 @@ fn show(
 ) : Unit / Stdout + Env + File + Ffi + Stdin {
   let th = theme_for(opts)
   let width = width_for(opts)
-  let proto = if draws_anything(doc) { image.detect(opts.images) } else { NoImages }
+  let proto =
+    if draws_anything(doc) and opts.pager != "always" {
+      image.detect(opts.images)
+    } else {
+      NoImages
+    }
   if proto == NoImages {
     let lines = render.render(th, width, doc)
     if paginate(opts, src, lines.length()) {

@@ -134,7 +134,8 @@ options:
   -w, --width <n>        output width (default: the terminal's, capped at 80)
   -s, --style <style>    dark | light | auto
       --color <when>     auto | always | never (NO_COLOR also disables it)
-      --images <when>    auto | kitty | iterm | never (a drawn one skips the pager)
+      --images <when>    auto | kitty | iterm | never (a drawn one skips the pager,
+                         unless -p asked for it)
   -p, --pager            page even when the text fits on screen
   -P, --no-pager         dump everything at once, without paging
 
