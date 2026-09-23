@@ -60,10 +60,13 @@ was declared) and its raw lines, never reinterpreted. `Bullets` and
 paragraphs and sublists to nest inside it. `Ordered` remembers the
 number the list started at.
 
-`Picture` is an image the terminal agreed to draw: the escape sequence
-already built, and the alt text it falls back to. Nothing produces one
-until `main` has read the file and asked the terminal, so the parser
-never emits it and the pure pipeline never reads a byte from disk.
+`Picture` is an image the terminal agreed to draw: the lines that show
+it, and the alt text it falls back to. Those lines are either one escape
+sequence that draws in place, or a block of placeholder cells that the
+renderer and the pager measure like any other text. Nothing produces a
+`Picture` until `main` has read the file and asked the terminal, so the
+parser never emits one and the pure pipeline never reads a byte from
+disk.
 
 `Table` holds the header row, one alignment per column, and the body
 rows — every row already cut to the header's number of columns, so the
@@ -79,5 +82,5 @@ pub type Block
   | Bullets([Item])
   | Ordered(Int, [Item])
   | Table([[Inline]], [Align], [[[Inline]]])
-  | Picture(String, [Inline])
+  | Picture([String], [Inline])
   | Rule

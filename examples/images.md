@@ -22,8 +22,15 @@ escape sequence has no width and the wrap around it would break:
 ![a circle](examples/circle.png) — that one is still legible, which is
 what alt text is for.
 
-The same happens with `--images never`, inside the pager, when stdout
-is not a terminal, and when the file cannot be read:
+A picture drawn through kitty is given a virtual placement and shown
+through placeholder cells, which measure and scroll like any other
+text — so it lives inside the pager rather than displacing it. iTerm2
+has no placement mechanism, so there the picture is drawn where the
+cursor stands and the pager is skipped.
+
+The alt text is what is left with `--images never`, when stdout is not
+a terminal, when the terminal cannot draw, and when the file cannot be
+read:
 
 ![this file does not exist](examples/missing.png)
 
@@ -42,15 +49,16 @@ entities like &mdash; and &hellip;
 
 - [x] draw an image when the terminal says it can
 - [x] fall back to alt text when it cannot
+- [x] keep the pager, by placing the image instead of drawing it
 - [ ] decide what a *second* image on the same line should do
 
 > A quote holds a picture too, on its own line:
 >
 > ![the banner, quoted](examples/banner.png)
 
-| protocol | how it is detected | chunked |
-|:---------|:-------------------|:-------:|
-| kitty    | asked, via `probe` |   yes   |
-| iTerm2   | environment only   |   no    |
+| protocol | how it is detected | pages |
+|:---------|:-------------------|:-----:|
+| kitty    | asked, via `probe` |  yes  |
+| iTerm2   | environment only   |  no   |
 
 [circle]: examples/circle.png

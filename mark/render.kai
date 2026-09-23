@@ -59,11 +59,12 @@ fn block(th: theme.Theme, width: Int, b: ast.Block) : [String] = match b {
   Ordered(start, items) -> enumerate(items)
     || (p => list_item(th, width, "#{start + p.fst}. ", p.snd))
   Table(head, aligns, body) -> table(th, width, head, aligns, body)
-  # The sequence draws itself and leaves the cursor below: it occupies no
-  # columns, so it never goes through the wrap. The alt text is not shown
-  # beside it — the picture is there, and saying what it is twice is
-  # what the alt text exists to avoid.
-  Picture(seq, _) -> [seq]
+  # Already lines, and already the right width: a placeholder block was
+  # measured when it was built, and a drawing sequence occupies no
+  # columns at all. Either way the wrap has nothing to do here. The alt
+  # text is not shown beside the picture — saying what it is twice is
+  # what alt text exists to avoid.
+  Picture(ls, _) -> ls
 }
 
 # ---- Tables ----

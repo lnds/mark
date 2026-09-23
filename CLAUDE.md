@@ -11,12 +11,13 @@ screen. Pointed at a directory — or at nothing — it opens a picker over the 
 under it instead.
 
 **Actual state:** complete for what it set out to do — arguments, block parser, inline
-scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 78 tests
+scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 84 tests
 and 2 property checks green.
 
 **Images** are drawn through the kitty or iTerm2 protocol, on a line of their own,
-when the terminal says it can and the pager is not involved. Everything else falls
-back to the alt text.
+when the terminal says it can. Under kitty they are placed rather than drawn — shown
+through placeholder cells that measure like text — so they survive inside the pager.
+Everything else falls back to the alt text.
 
 Deliberately out of scope: automatic light/dark background detection via OSC 11 —
 `--style` settles it by hand.
@@ -219,9 +220,12 @@ The pager does not use `widget.listbox`: its lines already come painted and fitt
 width by the renderer, and cutting them by columns again would split an escape sequence.
 The hand-rolled viewport is half a dozen pure functions over `[String]`.
 
-For measuring width use `text.display_width` from the stdlib. terevaka's `visible_len`
-already delegates to it, so it is the right tool for measuring text that **contains** ANSI,
-which is what the status bar needs.
+**The two width functions are not interchangeable.** `text.display_width` counts every
+codepoint it is given, escape sequences included: on `"\e[1mhola\e[0m"` it says 12.
+terevaka's `ui.visible_len` discounts them first and says 4. So text that still carries
+ANSI — a status bar, a placeholder grid — is measured with `visible_len`, and
+`display_width` is for text that has none yet, which inside the renderer means everything
+before the painting pass.
 
 ## Traps verified in this project
 

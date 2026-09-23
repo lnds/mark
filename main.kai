@@ -143,48 +143,89 @@ fn pick(root: String) : Option[cli.Source] / File + Ffi {
 
 # ---- Pictures ----
 
-# The one place a byte is read for an image. The pipeline downstream is
-# pure, so the file is opened here and what travels on is the finished
-# escape sequence — `render` never learns there was a disk.
+# The one place a byte is read for an image, and the one place the
+# terminal is written to directly. The pipeline downstream is pure, so
+# the file is opened here and what travels on is a block of lines —
+# `render` never learns there was a disk.
+#
+# Every placed image needs an id of its own, which is what the counter
+# threads through: the terminal keeps them apart by it.
 #
 # Only a paragraph that is nothing but one image becomes a picture. An
-# image sharing a line with text would have to be measured, and an
-# escape sequence has no width: it would break the wrap around it. That
-# one keeps its alt text.
-fn with_pictures(proto: image.Protocol, bs: [ast.Block]) : [ast.Block] / File =
-  bs
-    | (b => match b {
-      Para([Image(alt, src)]) -> picture(proto, alt, src)
-      Quote(inner) -> Quote(with_pictures(proto, inner))
-      other -> other
-    })
+# image sharing a line with text would have to be measured against the
+# words beside it, and that is a layout this does not attempt. That one
+# keeps its alt text.
+fn with_pictures(
+  proto: image.Protocol,
+  bs: [ast.Block],
+  id: Int
+) : ([ast.Block], Int) / File + Ffi = match bs {
+  [] -> ([], id)
+  [b, ...rest] -> {
+    let (drawn, next) = picture_block(proto, b, id)
+    let (others, last) = with_pictures(proto, rest, next)
+    ([drawn, ...others], last)
+  }
+}
+
+fn picture_block(proto: image.Protocol, b: ast.Block, id: Int) : (ast.Block, Int) / File + Ffi =
+  match b {
+    Para([Image(alt, src)]) -> picture(proto, alt, src, id)
+    Quote(inner) -> {
+      let (drawn, next) = with_pictures(proto, inner, id)
+      (Quote(drawn), next)
+    }
+    other -> (other, id)
+  }
 
 # A file that cannot be read is not an error worth stopping for: the
 # document still says what the picture was, which is more than a dead
-# process would.
-fn picture(proto: image.Protocol, alt: [ast.Inline], src: String) : ast.Block / File =
+# process would. The same goes for one whose size cannot be found —
+# only PNG says it in a header, and only PNG is what the protocols here
+# transmit.
+fn picture(
+  proto: image.Protocol,
+  alt: [ast.Inline],
+  src: String,
+  id: Int
+) : (ast.Block, Int) / File + Ffi {
+  let fallback = (Para([Image(alt, src)]), id)
   match file.read_bytes(src) {
-    Err(_) -> Para([Image(alt, src)])
-    Ok(bytes) -> match image.sequence(proto, bytes) {
-      Some(seq) -> Picture(seq, alt)
-      None -> Para([Image(alt, src)])
+    Err(_) -> fallback
+    Ok(buf) -> match proto {
+      Placed(cw, ch) -> match image.png_size(buf) {
+        None -> fallback
+        Some((w, h)) -> {
+          let (cols, rows) = image.cells_for(w, h, cw, ch)
+          if rows > image.max_rows() {
+            fallback
+          } else {
+            image.install(id, buf, cols, rows)
+            (Picture(image.grid(id, cols, rows), alt), id + 1)
+          }
+        }
+      }
+      _ -> match image.sequence(proto, buf) {
+        Some(seq) -> (Picture([seq], alt), id)
+        None -> fallback
+      }
     }
   }
+}
 
 # `fs.dir.list_dir` answers with the entries or with nothing at all, so
 # an empty directory reads as a file here and is caught by the read.
 fn is_directory(path: String) : Bool / File = not dir.list_dir(path).is_empty()
 
-# A document with a picture in it is dumped rather than paged, and that
-# is a choice: the pager repaints by measuring its lines, and the escape
-# sequence that draws a picture has no width to measure. Paging one
-# would mean showing the alt text instead — so the picture wins over the
-# pager mark would have opened on its own, and the scrollback keeps the
-# rest.
+# A placed picture is ordinary text as far as everything downstream is
+# concerned — a block of placeholder cells one column wide each — so it
+# pages like prose and nothing here has to choose between the two.
 #
-# It does not win over a `-p` that asked for the pager by name. An
-# explicit flag that goes quietly ignored is worse than either outcome
-# it was choosing between.
+# A picture that could not be placed can only be drawn where the cursor
+# stands, and that one cannot be paged: the repaint measures its lines
+# and an escape sequence has no width. There the picture wins over the
+# pager mark would have opened on its own, but not over a `-p` that
+# asked for the pager by name.
 #
 # The terminal is asked only when the document has something to draw.
 # The query costs a round trip, and a silent terminal costs the whole
@@ -196,23 +237,24 @@ fn show(
 ) : Unit / Stdout + Env + File + Ffi + Stdin {
   let th = theme_for(opts)
   let width = width_for(opts)
-  let proto =
-    if draws_anything(doc) and opts.pager != "always" {
-      image.detect(opts.images)
-    } else {
-      NoImages
-    }
-  if proto == NoImages {
-    let lines = render.render(th, width, doc)
-    if paginate(opts, src, lines.length()) {
-      pager.run(lines, name_of(src))
-    } else {
-      foreach(lines, l => Stdout.print(l))
-    }
+  let found =
+    if draws_anything(doc) { place_if_possible(image.detect(opts.images)) } else { NoImages }
+  # A protocol that cannot be paged loses to a `-p` that asked for the
+  # pager by name. An explicit flag going quietly ignored is worse than
+  # either outcome it was choosing between.
+  let proto = if pages_with(found) or opts.pager != "always" { found } else { NoImages }
+  let (drawn, _) = if proto == NoImages { (doc, 0) } else { with_pictures(proto, doc, FIRST_ID) }
+  let lines = render.render(th, width, drawn)
+  if pages_with(proto) and paginate(opts, src, lines.length()) {
+    pager.run(lines, name_of(src))
   } else {
-    foreach(render.render(th, width, with_pictures(proto, doc)), l => Stdout.print(l))
+    foreach(lines, l => Stdout.print(l))
   }
 }
+
+# Where image ids start. Any number would do; a high one keeps them clear
+# of whatever else in the session has been talking to the same terminal.
+const FIRST_ID : Int = 4100
 
 # Whether asking the terminal could change anything: a paragraph that is
 # one image and nothing else is the only shape that becomes a picture.
@@ -244,4 +286,23 @@ fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi {
       }
     }
   }
+}
+
+# Placement needs the cell size, which is a second question to the
+# terminal, so it is only asked of a terminal that already said it draws
+# kitty graphics.
+fn place_if_possible(proto: image.Protocol) : image.Protocol / Ffi = match proto {
+  Kitty -> match image.cell_size() {
+    Some((w, h)) -> Placed(w, h)
+    None -> Kitty
+  }
+  other -> other
+}
+
+# Whether a picture can be paged: a placed one is text, a drawn one is
+# not. Only the second has to argue with the pager.
+fn pages_with(proto: image.Protocol) : Bool = match proto {
+  Placed(_, _) -> true
+  NoImages -> true
+  _ -> false
 }

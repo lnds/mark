@@ -2,6 +2,7 @@ import mark.image
 import array
 import bin
 import encoding.base64
+import terevaka.ui as ui
 
 # "Man" — three bytes whose base64 is the textbook `TWFu`, with no
 # padding, so a wrong alphabet or a stray `=` shows up immediately.
@@ -9,7 +10,7 @@ fn man() : Array[Byte] = array.from([bin.byte(77), bin.byte(97), bin.byte(110)])
 
 # Long enough to need two chunks: 3073 bytes base64-encode to 4100
 # characters, four past the protocol's cap.
-fn long() : Array[Byte] = array.from(repeat(bin.byte(65), 3073))
+fn long() : Array[Byte] = array.from(list.repeat(bin.byte(65), 3073))
 
 fn esc() : String = "\u{1b}"
 
@@ -57,4 +58,72 @@ test "the payload survives the encoder untouched" {
       assert chars(joined).length() == 4100
     }
   }
+}
+
+# A PNG header: signature, then the IHDR length and tag, then width and
+# height big-endian. Nothing after them is read, so nothing follows.
+fn png_header(w: Int, h: Int) : Array[Byte] = array.from(
+  ([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]
+    ++ be32(w)
+    ++ be32(h))
+    | (n => bin.byte(n))
+)
+
+fn be32(n: Int) : [Int] = [n / 16777216 % 256, n / 65536 % 256, n / 256 % 256, n % 256]
+
+fn size_is(got: Option[(Int, Int)], w: Int, h: Int) : Bool = match got {
+  Some(p) -> p.fst == w and p.snd == h
+  None -> false
+}
+
+test "a PNG says its size in the header it opens with" {
+  assert size_is(image.png_size(png_header(320, 120)), 320, 120)
+  assert size_is(image.png_size(png_header(1, 1)), 1, 1)
+  # Not a PNG, or too short to hold a header: no size to be had.
+  assert is_none(image.png_size(array.from([bin.byte(1), bin.byte(2)])))
+  assert is_none(image.png_size(png_header(0, 0)))
+}
+
+fn cells_are(w: Int, h: Int, cw: Int, ch: Int, cols: Int, rows: Int) : Bool {
+  let got = image.cells_for(w, h, cw, ch)
+  got.fst == cols and got.snd == rows
+}
+
+test "pixels become cells, rounded up so nothing is cut" {
+  # The real measurement from a Retina terminal: 23 x 48 px per cell.
+  assert cells_are(320, 120, 23, 48, 14, 3)
+  assert cells_are(160, 160, 23, 48, 7, 4)
+  # An exact fit does not gain a row it does not need.
+  assert cells_are(46, 96, 23, 48, 2, 2)
+  # Nothing ever measures zero.
+  assert cells_are(1, 1, 23, 48, 1, 1)
+}
+
+test "the placeholder grid is as wide as it claims to be" {
+  let g = image.grid(7, 14, 3)
+  assert g.length() == 3
+  # What the pager will measure: 14 columns on every line. `visible_len`
+  # is the one that discounts the escape codes; `text.display_width`
+  # counts their bytes and would say 30-odd.
+  assert all(g, l => ui.visible_len(l) == 14)
+}
+
+test "only the first cell of a line carries its row" {
+  let g = image.grid(7, 4, 2)
+  # Row 0 takes the first diacritic of kitty's table, row 1 the second.
+  assert char_index_of(nth(g, 0).unwrap_or(""), "\u{0305}") != None
+  assert char_index_of(nth(g, 1).unwrap_or(""), "\u{030D}") != None
+  # Four cells, one diacritic: the other three inherit the row.
+  assert count(chars(nth(g, 0).unwrap_or("")), c => c == '\u{10eeee}') == 4
+  assert count(chars(nth(g, 0).unwrap_or("")), c => c == '\u{305}') == 1
+}
+
+test "the image id rides in the foreground colour" {
+  let g = image.grid(4100, 2, 1)
+  # 4100 is 0x001004: no red, 0x10 green, 0x04 blue.
+  assert char_index_of(nth(g, 0).unwrap_or(""), "[38;2;0;16;4m") != None
+}
+
+test "a placed image draws through its placeholders, not a sequence" {
+  assert image.sequence(Placed(23, 48), man()) == None
 }
