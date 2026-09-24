@@ -104,7 +104,15 @@ pub fn sequence(proto: Protocol, buf: Array[Byte]) : Option[String] = match prot
     let bytes = payload(buf)
     Some("#{esc()}]1337;File=inline=1;size=#{bytes.length()}:#{base64.encode(bytes)}#{bel()}")
   }
-  Kitty -> Some(join(kitty_chunks(chunk(base64.encode(payload(buf))), true, []), ""))
+  # kitty takes PNG or raw pixels. Handing it anything else under `f=100`
+  # is a lie the terminal cannot catch and the reader sees as nothing at
+  # all, so it is refused here and the caller converts or falls back.
+  Kitty ->
+    if format_of(buf) != Png {
+      None
+    } else {
+      Some(join(kitty_chunks(chunk(base64.encode(payload(buf))), true, []), ""))
+    }
 }
 
 # `Byte` is its own type and the encoder wants `Int`, so every byte is
@@ -317,3 +325,44 @@ fn line_at(t: ([String], Int), r: Int) : String =
   nth(t.fst, r).unwrap_or(repeat(" ", t.snd))
 
 fn max_of(xs: [Int]) : Int = foldl(xs, 0, int.max)
+
+# ---- Formats ----
+
+#[doc("""
+The image formats a document is likely to name, told apart by the bytes
+they open with rather than by the extension — a name is a claim and a
+magic number is evidence.
+
+Only `Png` can be transmitted to kitty, which accepts PNG or raw pixels
+and nothing else; the rest have to be converted first. iTerm2 takes
+whatever the system can open, so there the distinction does not matter.
+""")]
+#[derive(Eq, Show)]
+pub type Format = Png | Jpeg | Gif | Webp | Bmp | Other
+
+#[doc("What `buf` holds, judged by the bytes it starts with.")]
+pub fn format_of(buf: Array[Byte]) : Format =
+  if opens_with(buf, [137, 80, 78, 71, 13, 10, 26, 10]) {
+    Png
+  } else if opens_with(buf, [255, 216, 255]) {
+    Jpeg
+  } else if opens_with(buf, [71, 73, 70, 56]) {
+    Gif
+  } else if opens_with(buf, [82, 73, 70, 70]) and at(buf, 8, 4) == [87, 69, 66, 80] {
+    Webp
+  } else if opens_with(buf, [66, 77]) {
+    Bmp
+  } else {
+    Other
+  }
+
+fn opens_with(buf: Array[Byte], magic: [Int]) : Bool = at(buf, 0, magic.length()) == magic
+
+# The `n` bytes at `from`, or a short list at the end of the buffer —
+# which never equals a magic number and so reads as "not this format".
+fn at(buf: Array[Byte], from: Int, n: Int) : [Int] =
+  [from..(from + n - 1)]
+    || (i => match bin.get_uint_be(buf, i, 1) {
+      Some(b) -> [b]
+      None -> []
+    })

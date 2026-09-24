@@ -13,6 +13,7 @@ import os.args
 import os.env
 import mark.ast
 import mark.cli
+import mark.convert
 import mark.parser
 import mark.render
 import mark.theme
@@ -160,7 +161,7 @@ fn with_pictures(
   bs: [ast.Block],
   id: Int,
   width: Int
-) : ([ast.Block], Int) / File + Ffi = match bs {
+) : ([ast.Block], Int) / File + Ffi + Process + Random + Env = match bs {
   [] -> ([], id)
   [b, ...rest] -> {
     let (drawn, next) = picture_block(proto, b, id, width)
@@ -174,7 +175,7 @@ fn picture_block(
   b: ast.Block,
   id: Int,
   width: Int
-) : (ast.Block, Int) / File + Ffi = match b {
+) : (ast.Block, Int) / File + Ffi + Process + Random + Env = match b {
   Para(xs) -> match only_images(xs, []) {
     Some(imgs) -> pictures(proto, imgs, id, width)
     None -> (b, id)
@@ -211,7 +212,7 @@ fn pictures(
   imgs: [([ast.Inline], String)],
   id: Int,
   width: Int
-) : (ast.Block, Int) / File + Ffi {
+) : (ast.Block, Int) / File + Ffi + Process + Random + Env {
   let fallback = (Para(intersperse_images(imgs)), id)
   let (tiles, next) = tiles_for(proto, imgs, id, [])
   match tiles {
@@ -235,7 +236,7 @@ fn tiles_for(
   imgs: [([ast.Inline], String)],
   id: Int,
   acc: [([String], Int)]
-) : (Option[[([String], Int)]], Int) / File + Ffi = match imgs {
+) : (Option[[([String], Int)]], Int) / File + Ffi + Process + Random + Env = match imgs {
   [] -> (Some(reverse(acc)), id)
   [(_, src), ...rest] -> match tile(proto, src, id) {
     None -> (None, id)
@@ -243,29 +244,50 @@ fn tiles_for(
   }
 }
 
+# kitty needs PNG, so an image in any other format is handed to whatever
+# converter the machine has before it is transmitted. iTerm2 needs
+# nothing: it takes what the system can open.
 fn tile(
   proto: image.Protocol,
   src: String,
   id: Int
-) : Option[(([String], Int), Int)] / File + Ffi = match file.read_bytes(src) {
-  Err(_) -> None
-  Ok(buf) -> match proto {
-    Placed(cw, ch) -> match image.png_size(buf) {
-      None -> None
-      Some((w, h)) -> {
-        let (cols, rows) = image.cells_for(w, h, cw, ch)
-        if rows > image.max_rows() {
-          None
-        } else {
-          image.install(id, buf, cols, rows)
-          Some(((image.grid(id, cols, rows), cols), id + 1))
-        }
+) : Option[(([String], Int), Int)] / File + Ffi + Process + Random + Env =
+  readable(proto, src).and_then(buf => placed_or_drawn(proto, buf, id))
+
+fn readable(
+  proto: image.Protocol,
+  src: String
+) : Option[Array[Byte]] / File + Process + Random + Env =
+  match file.read_bytes(src) {
+    Err(_) -> None
+    Ok(buf) ->
+      if image.format_of(buf) == Png or proto == Iterm {
+        Some(buf)
+      } else {
+        convert.to_png(src)
+      }
+  }
+
+fn placed_or_drawn(
+  proto: image.Protocol,
+  buf: Array[Byte],
+  id: Int
+) : Option[(([String], Int), Int)] / Ffi = match proto {
+  Placed(cw, ch) -> match image.png_size(buf) {
+    None -> None
+    Some((w, h)) -> {
+      let (cols, rows) = image.cells_for(w, h, cw, ch)
+      if rows > image.max_rows() {
+        None
+      } else {
+        image.install(id, buf, cols, rows)
+        Some(((image.grid(id, cols, rows), cols), id + 1))
       }
     }
-    # Not placed, so no width to report: the terminal decides where the
-    # drawing lands and how much room it takes.
-    _ -> image.sequence(proto, buf).map(seq => (([seq], 0), id))
   }
+  # Not placed, so no width to report: the terminal decides where the
+  # drawing lands and how much room it takes.
+  _ -> image.sequence(proto, buf).map(seq => (([seq], 0), id))
 }
 
 # The paragraph as it was, for the fallback: the images with the single
@@ -296,7 +318,7 @@ fn show(
   opts: cli.Opts,
   src: cli.Source,
   doc: [ast.Block]
-) : Unit / Stdout + Env + File + Ffi + Stdin {
+) : Unit / Stdout + Env + File + Ffi + Stdin + Process + Random {
   let th = theme_for(opts)
   let width = width_for(opts)
   let found =
@@ -330,7 +352,7 @@ fn draws_anything(bs: [ast.Block]) : Bool = any(
   }
 )
 
-fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi {
+fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi + Process + Random {
   let opts = cli.parse_args(args.argv())
   match resolve(opts.source) {
     None -> 0

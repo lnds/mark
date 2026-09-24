@@ -11,13 +11,14 @@ screen. Pointed at a directory — or at nothing — it opens a picker over the 
 under it instead.
 
 **Actual state:** complete for what it set out to do — arguments, block parser, inline
-scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 89 tests
+scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 91 tests
 and 2 property checks green.
 
 **Images** are drawn through the kitty or iTerm2 protocol, on a line of their own,
 when the terminal says it can. Under kitty they are placed rather than drawn — shown
 through placeholder cells that measure like text — so they survive inside the pager.
-Everything else falls back to the alt text.
+kitty takes PNG and nothing else, so `mark/convert.kai` hands any other format to
+whatever converter the machine has. Everything else falls back to the alt text.
 
 Deliberately out of scope: automatic light/dark background detection via OSC 11 —
 `--style` settles it by hand.
@@ -142,6 +143,9 @@ argv/stdin/file            parse           render             output
 - `mark/pager.kai` — the viewport over the already-rendered lines. `Model`, `scroll`,
   `viewport`, `status` and `step` are **pure**; only `run` touches the terminal, so
   scrolling is tested by equality with no TUI to stand up.
+- `mark/convert.kai` — the image formats kitty will not take, handed to `sips`,
+  ImageMagick or ffmpeg, whichever the machine has. Every one missing means the
+  picture keeps its alt text: nothing here is required.
 - `mark/image.kai` — whether the terminal draws pictures, and the escape sequence
   that draws one. `detect` asks (kitty has a capability query; iTerm2 has only the
   environment) and is the one effectful part; `sequence` is pure, bytes to escape

@@ -8,9 +8,15 @@ import terevaka.ui as ui
 # padding, so a wrong alphabet or a stray `=` shows up immediately.
 fn man() : Array[Byte] = array.from([bin.byte(77), bin.byte(97), bin.byte(110)])
 
+# The eight bytes a PNG opens with. kitty takes PNG and nothing else, so
+# a buffer it will accept has to start with them.
+fn png_magic() : [Int] = [137, 80, 78, 71, 13, 10, 26, 10]
+
+fn png_of(extra: [Int]) : Array[Byte] = array.from((png_magic() ++ extra) | (n => bin.byte(n)))
+
 # Long enough to need two chunks: 3073 bytes base64-encode to 4100
 # characters, four past the protocol's cap.
-fn long() : Array[Byte] = array.from(list.repeat(bin.byte(65), 3073))
+fn long() : Array[Byte] = png_of(list.repeat(65, 3065))
 
 fn esc() : String = "\u{1b}"
 
@@ -24,7 +30,17 @@ test "iTerm2 takes the payload whole, with the decoded length" {
 }
 
 test "kitty transmits and displays in one chunk when it fits" {
-  assert image.sequence(Kitty, man()) == Some("#{esc()}_Ga=T,f=100,m=0;TWFu#{esc()}\\")
+  assert image.sequence(Kitty, png_of([77, 97, 110]))
+    == Some("#{esc()}_Ga=T,f=100,m=0;iVBORw0KGgpNYW4=#{esc()}\\")
+}
+
+test "kitty refuses what is not a PNG rather than mislabelling it" {
+  # `f=100` says PNG. Sending JPEG bytes under it is a lie the terminal
+  # cannot catch and the reader sees as nothing at all.
+  assert image.sequence(Kitty, array.from([255, 216, 255, 224] | (n => bin.byte(n)))) == None
+  assert image.sequence(Kitty, man()) == None
+  # iTerm2 takes whatever the system can open, so the same bytes are fine.
+  assert image.sequence(Iterm, man()) != None
 }
 
 test "kitty chunks at the protocol's cap, and only the last says it ends" {
@@ -156,4 +172,19 @@ test "a tile wider than the width still gets its own band" {
 
 test "no tiles, no lines" {
   assert image.bands([], 40) == []
+}
+
+fn head_of(bs: [Int]) : Array[Byte] = array.from(bs | (n => bin.byte(n)))
+
+test "a format is judged by the bytes it opens with, not its name" {
+  assert image.format_of(head_of([137, 80, 78, 71, 13, 10, 26, 10, 0, 0])) == Png
+  assert image.format_of(head_of([255, 216, 255, 224])) == Jpeg
+  assert image.format_of(head_of([71, 73, 70, 56, 57, 97])) == Gif
+  assert image.format_of(head_of([82, 73, 70, 70, 1, 2, 3, 4, 87, 69, 66, 80])) == Webp
+  assert image.format_of(head_of([66, 77, 1, 2])) == Bmp
+  # RIFF that is not WebP — a wav, say — is not an image we know.
+  assert image.format_of(head_of([82, 73, 70, 70, 1, 2, 3, 4, 87, 65, 86, 69])) == Other
+  # Too short to carry any signature at all.
+  assert image.format_of(head_of([137, 80])) == Other
+  assert image.format_of(array.from([])) == Other
 }

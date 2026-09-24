@@ -1,0 +1,81 @@
+#[doc("""
+Turning an image kitty will not take into one it will.
+
+kitty accepts PNG or raw pixels and says so plainly: *"the client should
+send simple pixel data to the terminal emulator"*. Decoding JPEG, GIF or
+WebP is a job for a codec, so this asks a converter the machine already
+has instead of carrying one.
+
+Nothing here is required. Every converter missing means the image keeps
+its alt text, which is the same answer the rest of the pipeline gives
+for a picture it cannot draw — no error, no noise, and a document that
+still says what was meant to be there.
+""")]
+
+import fs.file
+import os.env
+import os.process as proc
+import uuid
+
+# The converters worth trying, in the order they are tried: the one
+# macOS always has, then the two spellings of ImageMagick, then the one
+# a machine that handles video will have. Each takes the input path and
+# the output path.
+fn converters() : [(String, [String])] = [
+  ("sips", ["-s", "format", "png", "%in", "--out", "%out"]),
+  ("magick", ["%in", "%out"]),
+  ("convert", ["%in", "%out"]),
+  ("ffmpeg", ["-y", "-loglevel", "quiet", "-i", "%in", "%out"])
+]
+
+#[doc("""
+The PNG bytes of whatever image `path` holds, or `None` when no
+converter on this machine could produce them.
+
+The converted file is written beside the system's other temporary files
+and removed again once it has been read: what the caller gets is bytes,
+not a path it would have to remember to clean up.
+""")]
+pub fn to_png(path: String) : Option[Array[Byte]] / Process + File + Random + Env {
+  let out = "#{temp_dir()}/mark-#{uuid.v4()}.png"
+  let bytes = run_any(converters(), path, out)
+  let _ = file.delete(out)
+  bytes
+}
+
+fn run_any(
+  cs: [(String, [String])],
+  input: String,
+  output: String
+) : Option[Array[Byte]] / Process + File = match cs {
+  [] -> None
+  [(cmd, args), ...rest] ->
+    if run(cmd, args | (a => fill(a, input, output))) {
+      match file.read_bytes(output) {
+        Ok(bytes) -> Some(bytes)
+        Err(_) -> run_any(rest, input, output)
+      }
+    } else {
+      run_any(rest, input, output)
+    }
+}
+
+fn fill(arg: String, input: String, output: String) : String =
+  string.replace(string.replace(arg, "%in", input), "%out", output)
+
+# Both pipes are drained and thrown away. A converter that is not
+# installed exits 127 after the runtime has written `execvp: No such
+# file` to *its* stderr — piping it is what keeps that off ours.
+fn run(cmd: String, args: [String]) : Bool / Process = match proc.pipe_errs(cmd, args) {
+  Err(_) -> false
+  Ok(child) -> {
+    let _ = proc.read_all(child)
+    let _ = proc.read_stderr(child)
+    match proc.wait(child) {
+      Ok(Exited(0)) -> true
+      _ -> false
+    }
+  }
+}
+
+fn temp_dir() : String / Env = env.get("TMPDIR").unwrap_or("/tmp")

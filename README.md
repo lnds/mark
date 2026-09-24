@@ -155,6 +155,11 @@ silent, which is the answer — and iTerm2, which defines no query, is recognise
 from `LC_TERMINAL` and `TERM_PROGRAM`. `--images` settles it by hand: `auto`,
 `kitty`, `iterm` or `never`.
 
+**Any format** the machine can convert: PNG travels as it is, and JPEG, GIF,
+WebP or BMP are handed to `sips`, ImageMagick or ffmpeg first, because kitty
+takes PNG and nothing else. iTerm2 needs no conversion at all. With no
+converter installed the picture keeps its alt text.
+
 A paragraph that is nothing but images draws all of them, side by side, and
 wraps to a new band when the width runs out. One image sharing a line with
 words keeps its alt text, which is also what is left when the terminal cannot

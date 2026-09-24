@@ -51,6 +51,13 @@ anywhere in the document:
 
 ![the circle again][circle]
 
+## Other formats
+
+kitty takes PNG and nothing else, so an image in any other format is
+handed to whatever converter the machine has — `sips`, ImageMagick or
+ffmpeg. iTerm2 needs no conversion: it takes what the system can open.
+With no converter installed the picture keeps its alt text, quietly.
+
 ## Everything else, for contrast
 
 Ordinary [links](https://github.com/lnds/mark) still print their
