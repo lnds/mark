@@ -155,9 +155,11 @@ silent, which is the answer — and iTerm2, which defines no query, is recognise
 from `LC_TERMINAL` and `TERM_PROGRAM`. `--images` settles it by hand: `auto`,
 `kitty`, `iterm` or `never`.
 
-Only an image alone on its line is drawn. One sharing a line with text keeps
-its alt text, which is also what is left when the terminal cannot draw, when
-the file cannot be read, and when the output is not a terminal at all.
+A paragraph that is nothing but images draws all of them, side by side, and
+wraps to a new band when the width runs out. One image sharing a line with
+words keeps its alt text, which is also what is left when the terminal cannot
+draw, when the file cannot be read, and when the output is not a terminal at
+all.
 Under kitty a picture is **placed**, not drawn: it is transmitted once, given a
 virtual placement, and shown through placeholder cells one column wide each.
 Those measure, scroll and clip like ordinary text, so the picture lives inside

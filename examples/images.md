@@ -34,6 +34,16 @@ read:
 
 ![this file does not exist](examples/missing.png)
 
+## Two on a line
+
+A paragraph that is nothing but images draws all of them, side by side,
+wrapping to a new band when the width runs out:
+
+![the banner](examples/banner.png) ![the circle](examples/circle.png)
+
+One word among them and it is prose with pictures in it, which is a
+different layout problem — that paragraph keeps its alt text.
+
 ## Reference form
 
 Images take the reference spelling too, resolved against a definition
@@ -50,7 +60,7 @@ entities like &mdash; and &hellip;
 - [x] draw an image when the terminal says it can
 - [x] fall back to alt text when it cannot
 - [x] keep the pager, by placing the image instead of drawing it
-- [ ] decide what a *second* image on the same line should do
+- [x] draw a second image on the same line, beside the first
 
 > A quote holds a picture too, on its own line:
 >

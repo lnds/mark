@@ -11,7 +11,7 @@ screen. Pointed at a directory — or at nothing — it opens a picker over the 
 under it instead.
 
 **Actual state:** complete for what it set out to do — arguments, block parser, inline
-scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 84 tests
+scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 89 tests
 and 2 property checks green.
 
 **Images** are drawn through the kitty or iTerm2 protocol, on a line of their own,

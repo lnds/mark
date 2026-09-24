@@ -274,3 +274,46 @@ fn diacritics() : [Int] = [
   0x1D188, 0x1D189, 0x1D1AA, 0x1D1AB, 0x1D1AC, 0x1D1AD, 0x1D242, 0x1D243,
   0x1D244
 ]
+
+#[doc("""
+Several pictures laid out side by side, as the lines that show them.
+
+Each tile is the lines of one picture and how many columns it covers.
+Tiles are packed left to right while they fit in `width` and then begin
+a new band, so a row of pictures wraps the way a row of words does
+rather than running off the edge — which, in the pager, would be a
+frame painted wider than the terminal.
+
+Inside a band the tiles are joined column by column, and one shorter
+than its neighbours is padded with blanks so the band stays
+rectangular. Pure: the tiles were built by `grid`.
+""")]
+pub fn bands(tiles: [([String], Int)], width: Int) : [String] =
+  pack(tiles, width, [], [])
+
+fn pack(ts: [([String], Int)], width: Int, cur: [([String], Int)], out: [[String]]) : [String] =
+  match ts {
+    [] -> join_all(reverse(if cur.is_empty() { out } else { [merge(reverse(cur)), ...out] }))
+    [t, ...rest] ->
+      if cur.is_empty() or band_width(cur) + 1 + t.snd <= width {
+        pack(rest, width, [t, ...cur], out)
+      } else {
+        pack(rest, width, [t], [merge(reverse(cur)), ...out])
+      }
+  }
+
+fn join_all(bs: [[String]]) : [String] = bs || (b => b)
+
+fn band_width(cur: [([String], Int)]) : Int = sum(cur | (t => t.snd)) + cur.length() - 1
+
+# One band: as tall as its tallest tile, every tile padded out to its own
+# width so the columns of the next one start where they should.
+fn merge(cur: [([String], Int)]) : [String] {
+  let h = max_of(cur | (t => list.length(t.fst)))
+  [0..(h - 1)] | (r => join(cur | (t => line_at(t, r)), " "))
+}
+
+fn line_at(t: ([String], Int), r: Int) : String =
+  nth(t.fst, r).unwrap_or(repeat(" ", t.snd))
+
+fn max_of(xs: [Int]) : Int = foldl(xs, 0, int.max)

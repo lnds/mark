@@ -151,67 +151,129 @@ fn pick(root: String) : Option[cli.Source] / File + Ffi {
 # Every placed image needs an id of its own, which is what the counter
 # threads through: the terminal keeps them apart by it.
 #
-# Only a paragraph that is nothing but one image becomes a picture. An
-# image sharing a line with text would have to be measured against the
-# words beside it, and that is a layout this does not attempt. That one
-# keeps its alt text.
+# A paragraph that is nothing but images becomes a picture — one, or
+# several laid out side by side. An image sharing a line with words
+# would have to be measured against them, and that is a layout this does
+# not attempt: that one keeps its alt text.
 fn with_pictures(
   proto: image.Protocol,
   bs: [ast.Block],
-  id: Int
+  id: Int,
+  width: Int
 ) : ([ast.Block], Int) / File + Ffi = match bs {
   [] -> ([], id)
   [b, ...rest] -> {
-    let (drawn, next) = picture_block(proto, b, id)
-    let (others, last) = with_pictures(proto, rest, next)
+    let (drawn, next) = picture_block(proto, b, id, width)
+    let (others, last) = with_pictures(proto, rest, next, width)
     ([drawn, ...others], last)
   }
 }
 
-fn picture_block(proto: image.Protocol, b: ast.Block, id: Int) : (ast.Block, Int) / File + Ffi =
-  match b {
-    Para([Image(alt, src)]) -> picture(proto, alt, src, id)
-    Quote(inner) -> {
-      let (drawn, next) = with_pictures(proto, inner, id)
-      (Quote(drawn), next)
-    }
-    other -> (other, id)
+fn picture_block(
+  proto: image.Protocol,
+  b: ast.Block,
+  id: Int,
+  width: Int
+) : (ast.Block, Int) / File + Ffi = match b {
+  Para(xs) -> match only_images(xs, []) {
+    Some(imgs) -> pictures(proto, imgs, id, width)
+    None -> (b, id)
   }
+  Quote(inner) -> {
+    let (drawn, next) = with_pictures(proto, inner, id, width - 2)
+    (Quote(drawn), next)
+  }
+  other -> (other, id)
+}
+
+# Every node an image, or the whitespace the source left between two of
+# them. A single word among them and this is prose with pictures in it,
+# which is a different layout problem.
+fn only_images(
+  xs: [ast.Inline],
+  acc: [([ast.Inline], String)]
+) : Option[[([ast.Inline], String)]] = match xs {
+  [] -> if acc.is_empty() { None } else { Some(reverse(acc)) }
+  [Image(alt, src), ...t] -> only_images(t, [(alt, src), ...acc])
+  [ast.Text(s), ...t] -> if is_blank(s) { only_images(t, acc) } else { None }
+  _ -> None
+}
+
+# The pictures of one paragraph, laid out together. A placed one becomes
+# a tile the band packer arranges; a drawn one becomes its sequence, and
+# consecutive sequences flow side by side because the terminal advances
+# the cursor past each picture itself.
+#
+# All or nothing: if any image in the paragraph cannot be drawn, the
+# whole paragraph keeps its alt text rather than showing half a row.
+fn pictures(
+  proto: image.Protocol,
+  imgs: [([ast.Inline], String)],
+  id: Int,
+  width: Int
+) : (ast.Block, Int) / File + Ffi {
+  let fallback = (Para(intersperse_images(imgs)), id)
+  let (tiles, next) = tiles_for(proto, imgs, id, [])
+  match tiles {
+    None -> fallback
+    Some(ts) -> match proto {
+      Placed(_, _) -> (Picture(image.bands(ts, width), alt_of(imgs)), next)
+      # Not placed, so not laid out either: the sequences go on one line
+      # and the terminal decides where each picture lands.
+      _ -> (Picture([join(ts | (t => join(t.fst, "")), "")], alt_of(imgs)), next)
+    }
+  }
+}
 
 # A file that cannot be read is not an error worth stopping for: the
 # document still says what the picture was, which is more than a dead
 # process would. The same goes for one whose size cannot be found —
 # only PNG says it in a header, and only PNG is what the protocols here
 # transmit.
-fn picture(
+fn tiles_for(
   proto: image.Protocol,
-  alt: [ast.Inline],
-  src: String,
-  id: Int
-) : (ast.Block, Int) / File + Ffi {
-  let fallback = (Para([Image(alt, src)]), id)
-  match file.read_bytes(src) {
-    Err(_) -> fallback
-    Ok(buf) -> match proto {
-      Placed(cw, ch) -> match image.png_size(buf) {
-        None -> fallback
-        Some((w, h)) -> {
-          let (cols, rows) = image.cells_for(w, h, cw, ch)
-          if rows > image.max_rows() {
-            fallback
-          } else {
-            image.install(id, buf, cols, rows)
-            (Picture(image.grid(id, cols, rows), alt), id + 1)
-          }
-        }
-      }
-      _ -> match image.sequence(proto, buf) {
-        Some(seq) -> (Picture([seq], alt), id)
-        None -> fallback
-      }
-    }
+  imgs: [([ast.Inline], String)],
+  id: Int,
+  acc: [([String], Int)]
+) : (Option[[([String], Int)]], Int) / File + Ffi = match imgs {
+  [] -> (Some(reverse(acc)), id)
+  [(_, src), ...rest] -> match tile(proto, src, id) {
+    None -> (None, id)
+    Some((t, next)) -> tiles_for(proto, rest, next, [t, ...acc])
   }
 }
+
+fn tile(
+  proto: image.Protocol,
+  src: String,
+  id: Int
+) : Option[(([String], Int), Int)] / File + Ffi = match file.read_bytes(src) {
+  Err(_) -> None
+  Ok(buf) -> match proto {
+    Placed(cw, ch) -> match image.png_size(buf) {
+      None -> None
+      Some((w, h)) -> {
+        let (cols, rows) = image.cells_for(w, h, cw, ch)
+        if rows > image.max_rows() {
+          None
+        } else {
+          image.install(id, buf, cols, rows)
+          Some(((image.grid(id, cols, rows), cols), id + 1))
+        }
+      }
+    }
+    # Not placed, so no width to report: the terminal decides where the
+    # drawing lands and how much room it takes.
+    _ -> image.sequence(proto, buf).map(seq => (([seq], 0), id))
+  }
+}
+
+# The paragraph as it was, for the fallback: the images with the single
+# space the source had between them.
+fn intersperse_images(imgs: [([ast.Inline], String)]) : [ast.Inline] =
+  intersperse(imgs | (p => ast.Image(p.fst, p.snd)), ast.Text(" "))
+
+fn alt_of(imgs: [([ast.Inline], String)]) : [ast.Inline] = imgs || (.fst)
 
 # `fs.dir.list_dir` answers with the entries or with nothing at all, so
 # an empty directory reads as a file here and is caught by the read.
@@ -243,7 +305,8 @@ fn show(
   # pager by name. An explicit flag going quietly ignored is worse than
   # either outcome it was choosing between.
   let proto = if pages_with(found) or opts.pager != "always" { found } else { NoImages }
-  let (drawn, _) = if proto == NoImages { (doc, 0) } else { with_pictures(proto, doc, FIRST_ID) }
+  let (drawn, _) =
+    if proto == NoImages { (doc, 0) } else { with_pictures(proto, doc, FIRST_ID, width) }
   let lines = render.render(th, width, drawn)
   if pages_with(proto) and paginate(opts, src, lines.length()) {
     pager.run(lines, name_of(src))
@@ -261,7 +324,7 @@ const FIRST_ID : Int = 4100
 fn draws_anything(bs: [ast.Block]) : Bool = any(
   bs,
   b => match b {
-    Para([Image(_, _)]) -> true
+    Para(xs) -> is_some(only_images(xs, []))
     Quote(inner) -> draws_anything(inner)
     _ -> false
   }
