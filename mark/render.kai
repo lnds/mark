@@ -176,7 +176,7 @@ fn row_line(
   bar: String,
   i: Int
 ) : String =
-  join(
+  string.join(
     zip3(wrapped, cols, aligns)
       | (t => " #{pad_to(th, nth_line(t.fst, i), t.snd, t.trd)} #{bar}"),
     ""
@@ -198,7 +198,7 @@ fn pad_to(th: theme.Theme, cs: [Cell], w: Int, a: ast.Align) : String {
 }
 
 fn edge(l: String, mid: String, r: String, cols: [Int]) : String =
-  l ++ join(cols | (w => repeat("─", w + 2)), mid) ++ r
+  l ++ string.join(cols | (w => repeat("─", w + 2)), mid) ++ r
 
 fn cells_width(cs: [Cell]) : Int =
   sum(cs | (c => text.char_width(char_to_int(c.ch))))
@@ -358,7 +358,7 @@ fn joint_style(line: [Cell], word: [Cell]) : String {
 # Emits a code only when the style changes, closing with `reset` before
 # each change so attributes do not accumulate.
 fn paint(cs: [Cell], rst: String) : String =
-  join(reverse(runs(cs, "", [], [], rst)), "")
+  string.join(reverse(runs(cs, "", [], [], rst)), "")
 
 # Gathers consecutive cells sharing a style into one run: that is one
 # `from_chars` and one pair of codes per run, rather than a fresh String

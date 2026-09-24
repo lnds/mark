@@ -8,7 +8,7 @@ note: this front matter is skipped, not shown
 An image **on a line of its own** is drawn by the terminal, if the
 terminal can draw one:
 
-![the mark banner](examples/banner.png)
+![the mark banner](banner.png)
 
 mark asks before it draws. The kitty protocol defines a query whose
 answer *is* the capability, so that one is asked rather than guessed;
@@ -19,7 +19,7 @@ iTerm2 defines no query, so it is recognised from `LC_TERMINAL` and
 
 An image that shares a line with text keeps its alt text, because an
 escape sequence has no width and the wrap around it would break:
-![a circle](examples/circle.png) — that one is still legible, which is
+![a circle](circle.png) — that one is still legible, which is
 what alt text is for.
 
 A picture drawn through kitty is given a virtual placement and shown
@@ -32,14 +32,14 @@ The alt text is what is left with `--images never`, when stdout is not
 a terminal, when the terminal cannot draw, and when the file cannot be
 read:
 
-![this file does not exist](examples/missing.png)
+![this file does not exist](missing.png)
 
 ## Two on a line
 
 A paragraph that is nothing but images draws all of them, side by side,
 wrapping to a new band when the width runs out:
 
-![the banner](examples/banner.png) ![the circle](examples/circle.png)
+![the banner](banner.png) ![the circle](circle.png)
 
 One word among them and it is prose with pictures in it, which is a
 different layout problem — that paragraph keeps its alt text.
@@ -71,11 +71,11 @@ entities like &mdash; and &hellip;
 
 > A quote holds a picture too, on its own line:
 >
-> ![the banner, quoted](examples/banner.png)
+> ![the banner, quoted](banner.png)
 
 | protocol | how it is detected | pages |
 |:---------|:-------------------|:-----:|
 | kitty    | asked, via `probe` |  yes  |
 | iTerm2   | environment only   |  no   |
 
-[circle]: examples/circle.png
+[circle]: circle.png

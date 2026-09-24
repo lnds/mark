@@ -20,6 +20,9 @@ through placeholder cells that measure like text — so they survive inside the 
 kitty takes PNG and nothing else, so `mark/convert.kai` hands any other format to
 whatever converter the machine has. Everything else falls back to the alt text.
 
+A relative image source is resolved against the **document's** directory, not the one
+mark was run from: `./shutup.jpg` means beside the file that named it.
+
 Deliberately out of scope: automatic light/dark background detection via OSC 11 —
 `--style` settles it by hand.
 
@@ -262,9 +265,15 @@ Every one of these cost a compile cycle here; do not repeat them.
   the module name is in scope with no import, so `list.repeat("", n)` works as written, and
   `xs.length()` by UFCS too.
 - **Importing `math/int` takes over the bare `max`/`min`.** `max(xs)` then fails with
-  `int.max expects 2 arguments`. Same remedy: write `list.max(xs)`.
+  `int.max expects 2 arguments`. Same remedy: write `list.max(xs)`. `path` does it to
+  `join` and `split`, which is why every `string.join` in this tree is spelled out.
 - **A continuation line may not begin with `.`.** Binary operators do continue an
   expression across lines; a UFCS chain does not. Break the chain inside its parentheses.
+- **`_` is not a lambda parameter.** `(i, _) => ...` is `expected `,` or `)` in call
+  arguments`; give the one you ignore a name.
+- **`list.map_indexed` is not tail-recursive.** It overflows the fiber stack on a list of
+  a few million — which a 3.5 MB image is, one `Int` per byte. `enumerate(xs) | f` walks
+  the same ground and survives it.
 
 **This file ages faster than the language.** Before working around something it calls
 missing, spend the thirty seconds to check.

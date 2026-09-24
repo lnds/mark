@@ -36,21 +36,32 @@ pub fn parse(src: String) : [ast.Block] {
 
 # ---- Front matter ----
 
-# A `---` fence on the very first line opens a metadata block that is
-# YAML or TOML, never markdown. Without a closing fence there was no
-# front matter at all — just a rule and a document under it.
+# A fence on the very first line opens a metadata block that is not
+# markdown: `---` for YAML, `+++` for TOML — Hugo writes the second and
+# a `+++` block is not even a rule, so unstripped it reads as a
+# paragraph of settings. Without a closing fence there was no front
+# matter at all, and `---` goes back to being the rule it looks like.
 fn strip_front_matter(ls: [String]) : [String] = match ls {
-  [first, ...rest] ->
-    if trim(first) == "---" {
-      match index_of(rest, l => trim(l) == "---" or trim(l) == "...") {
-        Some(i) -> drop(rest, i + 1)
-        None -> ls
-      }
-    } else {
-      ls
+  [first, ...rest] -> match opener(trim(first)) {
+    None -> ls
+    Some(closers) -> match index_of(rest, l => contains(closers, trim(l))) {
+      Some(i) -> drop(rest, i + 1)
+      None -> ls
     }
+  }
   [] -> ls
 }
+
+# What may close the block this line opened. YAML allows `...` as well
+# as a second `---`; TOML closes only with its own fence.
+fn opener(l: String) : Option[[String]] =
+  if l == "---" {
+    Some(["---", "..."])
+  } else if l == "+++" {
+    Some(["+++"])
+  } else {
+    None
+  }
 
 # ---- Link reference definitions ----
 
@@ -537,7 +548,7 @@ fn setext_level(l: String) : Option[Int] {
 # are the message: two of them, or a closing backslash, are how the
 # source insists on a break. Every other newline is a space — the
 # renderer decides where the text wraps.
-fn para_text(acc: [String]) : String = join(weave(reverse(acc), []), "")
+fn para_text(acc: [String]) : String = string.join(weave(reverse(acc), []), "")
 
 # The separator is pushed as a fragment of its own rather than glued to
 # the line: the join at the end walks them all once anyway, and a fresh

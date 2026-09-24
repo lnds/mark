@@ -135,7 +135,8 @@ wrapping, code both fenced and indented four spaces, nested quotes, bullet and
 ordered lists with sublists and task boxes, tables, horizontal rules; and
 inline: emphasis, strong, strikethrough, code spans, links, character entities
 and backslash escapes. A YAML or TOML front matter block is metadata and is
-skipped rather than shown.
+skipped rather than shown — `---` for YAML and `+++` for TOML, which is what
+Hugo writes.
 
 Links come in every spelling: `[text](dest)`, the reference forms
 `[text][label]`, `[label][]` and a bare `[label]` resolved against a
@@ -154,6 +155,9 @@ own capability query — an emulator that does not speak the protocol stays
 silent, which is the answer — and iTerm2, which defines no query, is recognised
 from `LC_TERMINAL` and `TERM_PROGRAM`. `--images` settles it by hand: `auto`,
 `kitty`, `iterm` or `never`.
+
+A relative image source is resolved against the directory of the document that
+named it, not the one mark was run from.
 
 **Any format** the machine can convert: PNG travels as it is, and JPEG, GIF,
 WebP or BMP are handed to `sips`, ImageMagick or ffmpeg first, because kitty

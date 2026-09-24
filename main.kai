@@ -10,6 +10,7 @@ import fs.dir
 import fs.file
 import math.int
 import os.args
+import path
 import os.env
 import mark.ast
 import mark.cli
@@ -25,7 +26,7 @@ import mark.image
 # Drains stdin line by line to EOF, gathering backwards so the join is
 # the only pass over the whole input.
 fn read_stdin(acc: [String]) : String / Stdin = match Stdin.read_line() {
-  None -> join(reverse(acc), "\n")
+  None -> string.join(reverse(acc), "\n")
   Some(line) -> read_stdin([line, ...acc])
 }
 
@@ -156,16 +157,21 @@ fn pick(root: String) : Option[cli.Source] / File + Ffi {
 # several laid out side by side. An image sharing a line with words
 # would have to be measured against them, and that is a layout this does
 # not attempt: that one keeps its alt text.
+#
+# `home` is the directory the document was read from. A source like
+# `./shutup.jpg` means "beside the document", which is where the author
+# put it — not beside whatever directory mark happened to be run from.
 fn with_pictures(
   proto: image.Protocol,
   bs: [ast.Block],
   id: Int,
-  width: Int
+  width: Int,
+  home: String
 ) : ([ast.Block], Int) / File + Ffi + Process + Random + Env = match bs {
   [] -> ([], id)
   [b, ...rest] -> {
-    let (drawn, next) = picture_block(proto, b, id, width)
-    let (others, last) = with_pictures(proto, rest, next, width)
+    let (drawn, next) = picture_block(proto, b, id, width, home)
+    let (others, last) = with_pictures(proto, rest, next, width, home)
     ([drawn, ...others], last)
   }
 }
@@ -174,14 +180,15 @@ fn picture_block(
   proto: image.Protocol,
   b: ast.Block,
   id: Int,
-  width: Int
+  width: Int,
+  home: String
 ) : (ast.Block, Int) / File + Ffi + Process + Random + Env = match b {
   Para(xs) -> match only_images(xs, []) {
-    Some(imgs) -> pictures(proto, imgs, id, width)
+    Some(imgs) -> pictures(proto, imgs, id, width, home)
     None -> (b, id)
   }
   Quote(inner) -> {
-    let (drawn, next) = with_pictures(proto, inner, id, width - 2)
+    let (drawn, next) = with_pictures(proto, inner, id, width - 2, home)
     (Quote(drawn), next)
   }
   other -> (other, id)
@@ -211,17 +218,18 @@ fn pictures(
   proto: image.Protocol,
   imgs: [([ast.Inline], String)],
   id: Int,
-  width: Int
+  width: Int,
+  home: String
 ) : (ast.Block, Int) / File + Ffi + Process + Random + Env {
   let fallback = (Para(intersperse_images(imgs)), id)
-  let (tiles, next) = tiles_for(proto, imgs, id, [])
+  let (tiles, next) = tiles_for(proto, imgs, id, [], home)
   match tiles {
     None -> fallback
     Some(ts) -> match proto {
       Placed(_, _) -> (Picture(image.bands(ts, width), alt_of(imgs)), next)
       # Not placed, so not laid out either: the sequences go on one line
       # and the terminal decides where each picture lands.
-      _ -> (Picture([join(ts | (t => join(t.fst, "")), "")], alt_of(imgs)), next)
+      _ -> (Picture([string.join(ts || (.fst), "")], alt_of(imgs)), next)
     }
   }
 }
@@ -235,12 +243,13 @@ fn tiles_for(
   proto: image.Protocol,
   imgs: [([ast.Inline], String)],
   id: Int,
-  acc: [([String], Int)]
+  acc: [([String], Int)],
+  home: String
 ) : (Option[[([String], Int)]], Int) / File + Ffi + Process + Random + Env = match imgs {
   [] -> (Some(reverse(acc)), id)
-  [(_, src), ...rest] -> match tile(proto, src, id) {
+  [(_, src), ...rest] -> match tile(proto, beside(home, src), id) {
     None -> (None, id)
-    Some((t, next)) -> tiles_for(proto, rest, next, [t, ...acc])
+    Some((t, next)) -> tiles_for(proto, rest, next, [t, ...acc], home)
   }
 }
 
@@ -328,7 +337,11 @@ fn show(
   # either outcome it was choosing between.
   let proto = if pages_with(found) or opts.pager != "always" { found } else { NoImages }
   let (drawn, _) =
-    if proto == NoImages { (doc, 0) } else { with_pictures(proto, doc, FIRST_ID, width) }
+    if proto == NoImages {
+      (doc, 0)
+    } else {
+      with_pictures(proto, doc, FIRST_ID, width, path.dirname(name_of(src)))
+    }
   let lines = render.render(th, width, drawn)
   if pages_with(proto) and paginate(opts, src, lines.length()) {
     pager.run(lines, name_of(src))
@@ -391,3 +404,13 @@ fn pages_with(proto: image.Protocol) : Bool = match proto {
   NoImages -> true
   _ -> false
 }
+
+# Where an image source points, read from the document rather than from
+# the shell. An absolute path and a URL are already answers; anything
+# else is relative to the file that named it.
+fn beside(home: String, src: String) : String =
+  if path.is_absolute(src) or char_index_of(src, "://") != None {
+    src
+  } else {
+    path.join(home, src)
+  }

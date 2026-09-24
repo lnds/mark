@@ -111,7 +111,7 @@ pub fn sequence(proto: Protocol, buf: Array[Byte]) : Option[String] = match prot
     if format_of(buf) != Png {
       None
     } else {
-      Some(join(kitty_chunks(chunk(base64.encode(payload(buf))), true, []), ""))
+      Some(string.join(kitty_chunks(chunk(payload(buf)), true, []), ""))
     }
 }
 
@@ -121,15 +121,12 @@ pub fn sequence(proto: Protocol, buf: Array[Byte]) : Option[String] = match prot
 fn payload(buf: Array[Byte]) : [Int] =
   enumerate(array.to_list(buf)) | (p => bin.get_uint_be(buf, p.fst, 1).unwrap_or(0))
 
-# 4096 base64 characters is the protocol's cap per escape sequence.
-fn chunk(payload: String) : [String] {
-  let n = chars(payload).length()
-  if n <= 4096 {
-    [payload]
-  } else {
-    [slice(payload, 0, 4096), ...chunk(slice(payload, 4096, n - 4096))]
-  }
-}
+# The protocol caps an escape sequence at 4096 base64 characters, which
+# is exactly what 3072 bytes encode to. Cutting the bytes rather than the
+# encoded string is what keeps this linear: slicing a multi-megabyte
+# String once per chunk copies its whole tail every time, and a 3.5 MB
+# image turns two seconds of work into two minutes of it.
+fn chunk(bytes: [Int]) : [String] = list.chunk(bytes, 3072) | base64.encode
 
 # Only the first chunk carries the format and the order to display;
 # every one says whether another follows, and the last says it does not.
@@ -199,7 +196,7 @@ a screen the pager clears.
 stdin and the pager would read them as keystrokes.
 """)]
 pub fn install(id: Int, buf: Array[Byte], cols: Int, rows: Int) : Unit / Ffi {
-  let cs = chunk(base64.encode(payload(buf)))
+  let cs = chunk(payload(buf))
   foreach(
     enumerate(cs),
     p => term.write(
@@ -318,7 +315,7 @@ fn band_width(cur: [([String], Int)]) : Int = sum(cur | (t => t.snd)) + cur.leng
 # width so the columns of the next one start where they should.
 fn merge(cur: [([String], Int)]) : [String] {
   let h = max_of(cur | (t => list.length(t.fst)))
-  [0..(h - 1)] | (r => join(cur | (t => line_at(t, r)), " "))
+  [0..(h - 1)] | (r => string.join(cur | (t => line_at(t, r)), " "))
 }
 
 fn line_at(t: ([String], Int), r: Int) : String =
