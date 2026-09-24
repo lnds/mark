@@ -159,6 +159,10 @@ from `LC_TERMINAL` and `TERM_PROGRAM`. `--images` settles it by hand: `auto`,
 A relative image source is resolved against the directory of the document that
 named it, not the one mark was run from.
 
+A picture is **named** to the terminal rather than spelled out to it whenever
+they share a filesystem: the payload is the path, so a multi-megabyte image
+costs what a small one costs. Over ssh the bytes have to travel and do.
+
 **Any format** the machine can convert: PNG travels as it is, and JPEG, GIF,
 WebP or BMP are handed to `sips`, ImageMagick or ffmpeg first, because kitty
 takes PNG and nothing else. iTerm2 needs no conversion at all. With no

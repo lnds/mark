@@ -363,3 +363,50 @@ fn at(buf: Array[Byte], from: Int, n: Int) : [Int] =
       Some(b) -> [b]
       None -> []
     })
+
+#[doc("""
+Sends the image by naming the file instead of spelling out its bytes,
+and gives it the same virtual placement `install` does.
+
+This is the fast path and by a wide margin: the payload is the path, so
+nothing is read byte by byte, nothing is base64-encoded and nothing is
+chunked. A 3.5 MB picture costs what a small one costs.
+
+It needs the terminal to share this filesystem, which rules out ssh —
+the caller decides that. `temp` says the file was made for this and the
+terminal may delete it once read, which kitty only honours for a path
+carrying `tty-graphics-protocol` in it.
+""")]
+pub fn install_path(id: Int, file: String, cols: Int, rows: Int, temp: Bool) : Unit / Ffi {
+  let medium = if temp { "t" } else { "f" }
+  term.write(
+    "#{esc()}_Ga=t,f=100,t=#{medium},q=2,i=#{id};#{base64.encode(path_bytes(file))}#{st()}"
+  )
+  term.write("#{esc()}_Ga=p,U=1,q=2,i=#{id},c=#{cols},r=#{rows}#{st()}")
+}
+
+# A path is short, so the byte-by-byte walk that would be ruinous over an
+# image costs nothing here.
+fn path_bytes(file: String) : [Int] = payload(array.from(string.bytes(file)))
+
+#[doc("""
+The infix kitty requires in the path of a file it is asked to delete,
+its own guard against being told to unlink something that matters.
+""")]
+pub const TEMP_MARK : String = "tty-graphics-protocol"
+
+#[doc("""
+The sequence that draws `file` where the cursor stands, by naming it
+rather than spelling it out — the same saving `install_path` makes, for
+a terminal that reports no cell size and so gets no placement.
+
+`None` for iTerm2, whose protocol carries the data and offers no way to
+point at a file, and for anything that draws nothing.
+""")]
+pub fn sequence_path(proto: Protocol, file: String, temp: Bool) : Option[String] = match proto {
+  Kitty ->
+    Some(
+      "#{esc()}_Ga=T,f=100,t=#{if temp { "t" } else { "f" }},q=2;#{base64.encode(path_bytes(file))}#{st()}"
+    )
+  _ -> None
+}

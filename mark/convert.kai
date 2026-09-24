@@ -13,6 +13,7 @@ still says what was meant to be there.
 """)]
 
 import fs.file
+import mark.image
 import os.env
 import os.process as proc
 import uuid
@@ -29,36 +30,29 @@ fn converters() : [(String, [String])] = [
 ]
 
 #[doc("""
-The PNG bytes of whatever image `path` holds, or `None` when no
-converter on this machine could produce them.
+A PNG of whatever image `src` holds, as the path it was written to, or
+`None` when no converter on this machine could produce one.
 
-The converted file is written beside the system's other temporary files
-and removed again once it has been read: what the caller gets is bytes,
-not a path it would have to remember to clean up.
+The file lands among the system's other temporary ones, under a name
+carrying `image.TEMP_MARK` — which is what lets the terminal be asked to
+delete it after reading. A caller that reads the bytes itself deletes it
+instead.
 """)]
-pub fn to_png(path: String) : Option[Array[Byte]] / Process + File + Random + Env {
-  let out = "#{temp_dir()}/mark-#{uuid.v4()}.png"
-  let bytes = run_any(converters(), path, out)
-  let _ = file.delete(out)
-  bytes
+pub fn to_png(src: String) : Option[String] / Process + File + Random + Env {
+  let out = "#{temp_dir()}/#{image.TEMP_MARK}-#{uuid.v4()}.png"
+  if run_any(converters(), src, out) { Some(out) } else { None }
 }
 
-fn run_any(
-  cs: [(String, [String])],
-  input: String,
-  output: String
-) : Option[Array[Byte]] / Process + File = match cs {
-  [] -> None
-  [(cmd, args), ...rest] ->
-    if run(cmd, args | (a => fill(a, input, output))) {
-      match file.read_bytes(output) {
-        Ok(bytes) -> Some(bytes)
-        Err(_) -> run_any(rest, input, output)
+fn run_any(cs: [(String, [String])], input: String, output: String) : Bool / Process + File =
+  match cs {
+    [] -> false
+    [(cmd, args), ...rest] ->
+      if run(cmd, args | (a => fill(a, input, output))) and file.exists(output) {
+        true
+      } else {
+        run_any(rest, input, output)
       }
-    } else {
-      run_any(rest, input, output)
-    }
-}
+  }
 
 fn fill(arg: String, input: String, output: String) : String =
   string.replace(string.replace(arg, "%in", input), "%out", output)

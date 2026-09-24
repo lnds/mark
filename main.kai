@@ -261,43 +261,78 @@ fn tile(
   src: String,
   id: Int
 ) : Option[(([String], Int), Int)] / File + Ffi + Process + Random + Env =
-  readable(proto, src).and_then(buf => placed_or_drawn(proto, buf, id))
+  match as_png(proto, src) {
+    None -> None
+    Some((file_path, buf, temp)) -> match proto {
+      Placed(cw, ch) -> placed(cw, ch, file_path, buf, temp, id)
+      # Not placed, so no width to report: the terminal decides where the
+      # drawing lands and how much room it takes.
+      _ -> drawn(proto, file_path, buf, temp).map(seq => (([seq], 0), id))
+    }
+  }
 
-fn readable(
+# The image as something the protocol will take: iTerm2 takes any format
+# as it is, and kitty takes PNG, so anything else is converted first.
+# The flag says the file is ours and may be deleted once read.
+fn as_png(
   proto: image.Protocol,
   src: String
-) : Option[Array[Byte]] / File + Process + Random + Env =
+) : Option[(String, Array[Byte], Bool)] / File + Process + Random + Env =
   match file.read_bytes(src) {
     Err(_) -> None
     Ok(buf) ->
-      if image.format_of(buf) == Png or proto == Iterm {
-        Some(buf)
+      if proto == Iterm or image.format_of(buf) == Png {
+        Some((src, buf, false))
       } else {
-        convert.to_png(src)
+        convert.to_png(src).and_then(
+          tmp => match file.read_bytes(tmp) {
+            Err(_) -> None
+            Ok(png) -> Some((tmp, png, true))
+          }
+        )
       }
   }
 
-fn placed_or_drawn(
-  proto: image.Protocol,
+# The picture is named to the terminal rather than spelled out to it
+# whenever they share a filesystem, which costs the same for three
+# megabytes as for three kilobytes. Over ssh there is no shared
+# filesystem and the bytes have to travel.
+# `buf` is read for the header either way — it is the only place a PNG
+# says how big it is — but its bytes are only walked when they have to
+# travel, which is the part that costs.
+fn placed(
+  cw: Int,
+  ch: Int,
+  file_path: String,
   buf: Array[Byte],
+  temp: Bool,
   id: Int
-) : Option[(([String], Int), Int)] / Ffi = match proto {
-  Placed(cw, ch) -> match image.png_size(buf) {
-    None -> None
-    Some((w, h)) -> {
-      let (cols, rows) = image.cells_for(w, h, cw, ch)
-      if rows > image.max_rows() {
-        None
+) : Option[(([String], Int), Int)] / File + Ffi + Env = match image.png_size(buf) {
+  None -> None
+  Some((w, h)) -> {
+    let (cols, rows) = image.cells_for(w, h, cw, ch)
+    if rows > image.max_rows() {
+      None
+    } else {
+      if shares_filesystem() {
+        image.install_path(id, absolute(file_path), cols, rows, temp)
       } else {
         image.install(id, buf, cols, rows)
-        Some(((image.grid(id, cols, rows), cols), id + 1))
+        if temp { let _ = file.delete(file_path) } else { () }
       }
+      Some(((image.grid(id, cols, rows), cols), id + 1))
     }
   }
-  # Not placed, so no width to report: the terminal decides where the
-  # drawing lands and how much room it takes.
-  _ -> image.sequence(proto, buf).map(seq => (([seq], 0), id))
 }
+
+# Over ssh the terminal is on another machine and cannot open our files.
+fn shares_filesystem() : Bool / Env =
+  env.get("SSH_CONNECTION") == None and env.get("SSH_TTY") == None
+
+# kitty opens the path from its own directory, which is not ours, so
+# what it is given has to be absolute. `PWD` is what the shell says.
+fn absolute(p: String) : String / Env =
+  if path.is_absolute(p) { p } else { path.join(env.get("PWD").unwrap_or("."), p) }
 
 # The paragraph as it was, for the fallback: the images with the single
 # space the source had between them.
@@ -413,4 +448,22 @@ fn beside(home: String, src: String) : String =
     src
   } else {
     path.join(home, src)
+  }
+
+# The same saving the placed path makes: a kitty that reports no cell
+# size still need not be handed three megabytes of base64 when it could
+# be handed a path instead.
+fn drawn(
+  proto: image.Protocol,
+  file_path: String,
+  buf: Array[Byte],
+  temp: Bool
+) : Option[String] / Env =
+  if shares_filesystem() and image.format_of(buf) == Png {
+    match image.sequence_path(proto, absolute(file_path), temp) {
+      Some(seq) -> Some(seq)
+      None -> image.sequence(proto, buf)
+    }
+  } else {
+    image.sequence(proto, buf)
   }

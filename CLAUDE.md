@@ -20,6 +20,11 @@ through placeholder cells that measure like text — so they survive inside the 
 kitty takes PNG and nothing else, so `mark/convert.kai` hands any other format to
 whatever converter the machine has. Everything else falls back to the alt text.
 
+**The picture is named, not spelled out.** When the terminal shares this filesystem
+the payload is the path (`t=f`), so a 3.5 MB image costs what a small one costs:
+0.09s against 2.2s, and 156 bytes of output against 4.7 MB. Over ssh there is no
+shared filesystem and the bytes travel as base64.
+
 A relative image source is resolved against the **document's** directory, not the one
 mark was run from: `./shutup.jpg` means beside the file that named it.
 
@@ -274,6 +279,8 @@ Every one of these cost a compile cycle here; do not repeat them.
 - **`list.map_indexed` is not tail-recursive.** It overflows the fiber stack on a list of
   a few million — which a 3.5 MB image is, one `Int` per byte. `enumerate(xs) | f` walks
   the same ground and survives it.
+- **`base64.encode` is quadratic in the length of its list.** 3.5 M bytes take 72 seconds
+  in one call and under a second in chunks of 3072. Measured, both ways.
 
 **This file ages faster than the language.** Before working around something it calls
 missing, spend the thirty seconds to check.
