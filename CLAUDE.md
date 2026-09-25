@@ -11,8 +11,13 @@ screen. Pointed at a directory — or at nothing — it opens a picker over the 
 under it instead.
 
 **Actual state:** complete for what it set out to do — arguments, block parser, inline
-scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 91 tests
+scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 100 tests
 and 2 property checks green.
+
+**Footnotes** are GFM's: `[^label]` in the text, `[^label]: ...` and whatever is
+indented under it as the note. They are numbered by where the markers appear, not by
+where the notes were written, and gathered under a rule at the foot. A marker nothing
+defines keeps its brackets; a note nothing cites is not shown.
 
 **Images** are drawn through the kitty or iTerm2 protocol, on a line of their own,
 when the terminal says it can. Under kitty they are placed rather than drawn — shown
@@ -131,10 +136,11 @@ argv/stdin/file            parse           render             output
 - `mark/cli.kai` — arguments to `Opts` (`source`, `width`, `style`, `color`, `pager`), a
   pure function over `[String]`. What depends on the environment is left unset
   (`width == 0`, `style == "auto"`) for `main` to resolve.
-- `mark/ast.kai` — blocks (heading, paragraph, list, code fence, quote, table, rule) and
-  inline (emphasis, strikethrough, code, link, hard break). Two of its shapes exist to be
-  resolved away rather than rendered: `Item.task` is the box a list item opened with, and
-  `Ref` is a reference link that `parse` settles once every definition has been read.
+- `mark/ast.kai` — blocks (heading, paragraph, list, code fence, quote, table, rule,
+  footnotes) and inline (emphasis, strikethrough, code, link, footnote mark, hard break).
+  Some of its shapes exist to be resolved away rather than rendered: `Item.task` is the box
+  a list item opened with, `Ref` is a reference link that `parse` settles once every
+  definition has been read, and `NoteRef` is a footnote marker before `parse` numbers it.
 - `mark/parser.kai` — `String -> [Block]`. Containers de-indent their lines and re-enter
   `blocks`, so nesting falls out of the recursion. Two shapes are decided by position
   rather than by prefix, and both live where the ambiguity is: a setext underline is

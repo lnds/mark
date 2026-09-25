@@ -4,7 +4,7 @@ touching no environment. `main.kai` hands it `args.argv()` and resolves
 afterwards whatever depends on the terminal (real width, colour).
 """)]
 
-pub const VERSION : String = "0.9.0"
+pub const VERSION : String = "0.10.0"
 
 #[doc("""
 Where the document comes from, as far as the arguments settle it.

@@ -79,3 +79,14 @@ entities like &mdash; and &hellip;
 | iTerm2   | environment only   |  no   |
 
 [circle]: circle.png
+
+## Footnotes
+
+They work as GFM spells them: a marker in the text[^one] and a
+definition anywhere below it. Numbering follows the markers, not the
+definitions[^two], and a repeated marker keeps its number[^one].
+
+[^one]: The first note, cited twice and numbered once.
+[^two]: The second, which was written first and is numbered second.
+
+    A note holds blocks, so this paragraph belongs to it.

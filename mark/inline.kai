@@ -134,7 +134,24 @@ fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline], pic: Bool) : [ast.Inlin
           )
         None -> go(cs, reopened, acc)
       }
-      _ -> go(after, [], [referred(pic, scan_chars(label), fold_chars(label)), ...flush(buf, acc)])
+      # A bare `[label]` is a shortcut reference — unless it opens with a
+      # caret, which makes it a footnote marker and never a link.
+      _ -> match label {
+        # The caret only makes a footnote without the bang: `![^x]` is an
+        # image reference whose label happens to start with one.
+        ['^', ...name] ->
+          if pic {
+            go(
+              after,
+              [],
+              [referred(true, scan_chars(label), fold_chars(label)), ...flush(buf, acc)]
+            )
+          } else {
+            go(after, [], [NoteRef(fold_chars(name)), ...flush(buf, acc)])
+          }
+        _ ->
+          go(after, [], [referred(pic, scan_chars(label), fold_chars(label)), ...flush(buf, acc)])
+      }
     }
   }
 }

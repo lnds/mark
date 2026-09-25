@@ -23,15 +23,19 @@ type Defs = [(String, String)]
 #[doc("""
 Parses a whole markdown document.
 
-Three passes, in the order the format forces: the front matter is not
-markdown and comes off first; the link reference definitions are
-gathered next, because `[text][label]` may precede the `[label]:` line
-that explains it; and only then do the blocks get read and their
-references settled.
+Passes, in the order the format forces. The front matter is not
+markdown and comes off first. The footnote definitions come off next,
+since they may span several lines and would otherwise be read as prose.
+The link reference definitions follow, because `[text][label]` may
+precede the `[label]:` line that explains it. Only then do the blocks
+get read, their references settled, and their footnote markers numbered
+by the order they appear in.
 """)]
 pub fn parse(src: String) : [ast.Block] {
-  let (defs, body) = take_definitions(strip_front_matter(lines(src)), [], [], false)
-  blocks(body) | (b => resolve_block(defs, b))
+  let (notes, without) = take_notes(strip_front_matter(lines(src)), [], [], false)
+  let (defs, body) = take_definitions(without, [], [], false)
+  let doc = blocks(body) | (b => resolve_block(defs, b))
+  number_notes(doc, notes, defs)
 }
 
 # ---- Front matter ----
@@ -597,3 +601,164 @@ fn drop_suffix_run(s: String, suffix: String) : String =
 
 fn lookup(defs: Defs, key: String) : Option[String] =
   find_map(defs, d => if d.fst == key { Some(d.snd) } else { None })
+
+# ---- Footnotes ----
+
+# A label and the lines of the note it names.
+type Notes = [(String, [String])]
+
+# `[^label]: text` and whatever is indented under it. A footnote is the
+# one definition that carries blocks rather than a destination, so it is
+# lifted out before anything else reads these lines — left in place, its
+# continuation would be prose and its first line a link definition.
+fn take_notes(ls: [String], notes: Notes, out: [String], fenced: Bool) : (Notes, [String]) =
+  match ls {
+    [] -> (reverse(notes), reverse(out))
+    [l, ...t] -> {
+      let fence = fence_marker(l) != None
+      match if fenced or fence { None } else { note_label(l) } {
+        None ->
+          take_notes(t, notes, [l, ...out], if fence { not fenced } else { fenced })
+        Some((label, first)) -> {
+          let (body, rest) = note_body(t, [])
+          take_notes(rest, [(label, [first, ...body]), ...notes], ["", ...out], fenced)
+        }
+      }
+    }
+  }
+
+# The label and the text left on the opening line.
+fn note_label(l: String) : Option[(String, String)] {
+  let t = trim(l)
+  if not starts_with(t, "[^") {
+    None
+  } else {
+    match char_index_of(t, "]:") {
+      None -> None
+      Some(i) -> {
+        let label = slice(t, 2, i - 2)
+        if is_empty(trim(label)) {
+          None
+        } else {
+          Some((inline.fold_label(label), trim(slice(t, i + 2, chars(t).length() - i - 2))))
+        }
+      }
+    }
+  }
+}
+
+# The note runs on for as long as its lines are indented under it, which
+# is what lets one hold a paragraph or a list. A blank line is kept,
+# since the note may be more than one paragraph, but a blank line
+# followed by unindented text ends it.
+fn note_body(ls: [String], acc: [String]) : ([String], [String]) = match ls {
+  [] -> (reverse(acc), [])
+  [l, ...t] ->
+    if is_blank(l) {
+      match head(t) {
+        Some(next) ->
+          if is_indented(next) { note_body(t, ["", ...acc]) } else { (reverse(acc), ls) }
+        None -> (reverse(acc), ls)
+      }
+    } else if is_indented(l) {
+      note_body(t, [strip_indent(l), ...acc])
+    } else {
+      (reverse(acc), ls)
+    }
+}
+
+# The markers decide the numbering, not the order the notes were
+# written: a reader counts them down the page. A marker nothing defines
+# keeps its brackets, and a note nothing points at is not shown.
+fn number_notes(doc: [ast.Block], notes: Notes, defs: Defs) : [ast.Block] {
+  let used = cited(doc, notes, [])
+  let numbered = doc | (b => mark_block(used, b))
+  if used.is_empty() { numbered } else { numbered ++ [note_section(used, notes, defs)] }
+}
+
+# The labels that both a marker points at and a definition explains, in
+# the order the markers appear, each one counted once.
+fn cited(bs: [ast.Block], notes: Notes, acc: [String]) : [String] =
+  foldl(bs, acc, (seen, b) => cited_in(marks_of(b), notes, seen))
+
+fn cited_in(labels: [String], notes: Notes, acc: [String]) : [String] =
+  foldl(labels, acc, (seen, l) => note_once(seen, l, notes))
+
+fn note_once(seen: [String], label: String, notes: Notes) : [String] =
+  if contains(seen, label) or (not defined(notes, label)) { seen } else { seen ++ [label] }
+
+fn defined(notes: Notes, label: String) : Bool = any(notes, n => n.fst == label)
+
+# Every footnote label a block points at, in the order it points at them.
+fn marks_of(b: ast.Block) : [String] = match b {
+  Heading(_, xs) -> marks_in(xs)
+  Para(xs) -> marks_in(xs)
+  Quote(inner) -> marks_under(inner)
+  Bullets(items) -> items || (it => marks_under(it.blocks))
+  Ordered(_, items) -> items || (it => marks_under(it.blocks))
+  Table(head, _, body) -> (head || marks_in) ++ (body || marks_row)
+  _ -> []
+}
+
+fn marks_under(bs: [ast.Block]) : [String] = bs || marks_of
+
+fn marks_row(r: [[ast.Inline]]) : [String] = r || marks_in
+
+fn marks_in(xs: [ast.Inline]) : [String] = xs
+  || (x => match x {
+    NoteRef(label) -> [label]
+    Emph(inner) -> marks_in(inner)
+    Strong(inner) -> marks_in(inner)
+    Strike(inner) -> marks_in(inner)
+    Link(label, _) -> marks_in(label)
+    Image(label, _) -> marks_in(label)
+    _ -> []
+  })
+
+# The marker becomes the number the reader counts, or goes back to the
+# brackets it was when nothing defined it.
+fn mark_block(used: [String], b: ast.Block) : ast.Block = match b {
+  Heading(n, xs) -> Heading(n, mark(used, xs))
+  Para(xs) -> Para(mark(used, xs))
+  Quote(inner) -> Quote(inner | (x => mark_block(used, x)))
+  Bullets(items) -> Bullets(items | (it => mark_item(used, it)))
+  Ordered(n, items) -> Ordered(n, items | (it => mark_item(used, it)))
+  Table(head, aligns, body) ->
+    Table(head | (c => mark(used, c)), aligns, body | (r => mark_row(used, r)))
+  other -> other
+}
+
+fn mark_row(used: [String], r: [[ast.Inline]]) : [[ast.Inline]] = r | (c => mark(used, c))
+
+fn mark_item(used: [String], it: ast.Item) : ast.Item =
+  ast.Item { ...it, blocks: it.blocks | (b => mark_block(used, b)) }
+
+fn mark(used: [String], xs: [ast.Inline]) : [ast.Inline] = xs || (x => mark_one(used, x))
+
+fn mark_one(used: [String], x: ast.Inline) : [ast.Inline] = match x {
+  NoteRef(label) -> match index_of(used, l => l == label) {
+    Some(i) -> [NoteMark(i + 1)]
+    None -> [ast.Text("[^#{label}]")]
+  }
+  Emph(inner) -> [Emph(mark(used, inner))]
+  Strong(inner) -> [Strong(mark(used, inner))]
+  Strike(inner) -> [Strike(mark(used, inner))]
+  Link(label, dest) -> [Link(mark(used, label), dest)]
+  Image(label, src) -> [Image(mark(used, label), src)]
+  other -> [other]
+}
+
+# The section itself: each cited note in number order, its lines read as
+# blocks like any others, so a note may hold a list or a quote — and its
+# own references resolved against the same definitions.
+fn note_section(used: [String], notes: Notes, defs: Defs) : ast.Block =
+  Notes(
+    enumerate(used)
+      | (p => ast.Note { number: p.fst + 1, blocks: note_blocks(p.snd, notes, defs) })
+  )
+
+fn note_blocks(label: String, notes: Notes, defs: Defs) : [ast.Block] {
+  let ls: [String] =
+    find_map(notes, n => if n.fst == label { Some(n.snd) } else { None }).unwrap_or([])
+  blocks(ls) | (b => resolve_block(defs, b))
+}

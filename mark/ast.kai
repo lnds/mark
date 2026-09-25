@@ -19,6 +19,12 @@ whole document first, so the resolution happens once the last one has
 been seen. What no definition matches degrades to its literal text.
 `ImageRef` is the same for `![alt][label]`.
 
+`NoteRef` is a footnote marker before it has a number — `[^label]` as
+the source wrote it. `parse` turns each one into the `NoteMark` the
+reader sees, numbered by the order the markers appear rather than the
+order the notes were written, and a marker nothing defines goes back to
+being the brackets it was.
+
 `Image` carries the alt text and the source path. It is the markup, not
 the picture: the bytes are read at the edge, and an image the terminal
 can actually draw becomes a `Picture` block before the renderer sees
@@ -35,6 +41,8 @@ pub type Inline
   | Image([Inline], String)
   | Ref([Inline], String)
   | ImageRef([Inline], String)
+  | NoteRef(String)
+  | NoteMark(Int)
   | Break
 
 #[doc("""
@@ -43,6 +51,14 @@ How a column is aligned, as its delimiter row declared it: `:--` left,
 """)]
 #[derive(Eq, Show)]
 pub type Align = AlignLeft | AlignCenter | AlignRight
+
+#[doc("""
+One footnote at the foot of the document: the number the markers in the
+text point at, and the blocks it holds. A named record rather than a
+pair, because `Block` derives `Eq` and a tuple inside it cannot.
+""")]
+#[derive(Eq, Show)]
+pub type Note = { number: Int, blocks: [Block] }
 
 #[doc("""
 One entry of a list: the blocks that make up its content, and whether
@@ -59,6 +75,11 @@ was declared) and its raw lines, never reinterpreted. `Bullets` and
 `Ordered` hold each item as an `Item`, whose blocks are what allows
 paragraphs and sublists to nest inside it. `Ordered` remembers the
 number the list started at.
+
+`Notes` is the footnotes, gathered at the foot of the document where a
+page would put them: each one its number and the blocks it holds, in
+number order. Only `parse` builds it, from the definitions it found and
+the markers that pointed at them.
 
 `Picture` is an image the terminal agreed to draw: the lines that show
 it, and the alt text it falls back to. Those lines are either one escape
@@ -83,4 +104,5 @@ pub type Block
   | Ordered(Int, [Item])
   | Table([[Inline]], [Align], [[[Inline]]])
   | Picture([String], [Inline])
+  | Notes([Note])
   | Rule

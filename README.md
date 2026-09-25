@@ -138,6 +138,14 @@ and backslash escapes. A YAML or TOML front matter block is metadata and is
 skipped rather than shown — `---` for YAML and `+++` for TOML, which is what
 Hugo writes.
 
+**Footnotes** work as GFM spells them: `[^label]` marks the text and
+`[^label]: ...` explains it, with anything indented under the definition
+belonging to the note — so one may hold a second paragraph, a list or a
+quote. They are numbered by the order the markers appear rather than the
+order the notes were written, repeated markers share a number, and they
+are gathered under a rule at the foot of the document. A marker nothing
+defines keeps its brackets, and a note nothing cites is not shown.
+
 Links come in every spelling: `[text](dest)`, the reference forms
 `[text][label]`, `[label][]` and a bare `[label]` resolved against a
 `[label]: dest` line anywhere in the document, `<https://autolinks>` and bare

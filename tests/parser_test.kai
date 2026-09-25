@@ -206,3 +206,65 @@ test "an image reference resolves, or keeps its bang and brackets" {
   assert found == [Para([Image([Text("pic")], "a.png")])]
   assert parser.parse("![pic][p]") == [Para([Text("!["), Text("pic"), Text("]")])]
 }
+
+fn note(n: Int, bs: [ast.Block]) : ast.Note = ast.Note { number: n, blocks: bs }
+
+test "a footnote is numbered by where its marker is, not where it is written" {
+  let d = parser.parse("uno[^b] dos[^a]\n\n[^a]: A.\n[^b]: B.")
+  assert d
+    == [
+      Para([Text("uno"), NoteMark(1), Text(" dos"), NoteMark(2)]),
+      Notes([note(1, [Para([Text("B.")])]), note(2, [Para([Text("A.")])])])
+    ]
+}
+
+test "the same marker twice is the same number, and the note appears once" {
+  let d = parser.parse("a[^x] b[^x]\n\n[^x]: X.")
+  assert d
+    == [
+      Para([Text("a"), NoteMark(1), Text(" b"), NoteMark(1)]),
+      Notes([note(1, [Para([Text("X.")])])])
+    ]
+}
+
+test "a marker nothing defines keeps its brackets, and defines no section" {
+  assert parser.parse("a[^nope]") == [Para([Text("a"), Text("[^nope]")])]
+}
+
+test "a note nothing cites is not shown" {
+  assert parser.parse("plain\n\n[^x]: X.") == [Para([Text("plain")])]
+}
+
+test "a note holds blocks, not just a line" {
+  let d = parser.parse("a[^x]\n\n[^x]: One.\n\n    Two.")
+  assert d
+    == [
+      Para([Text("a"), NoteMark(1)]),
+      Notes([note(1, [Para([Text("One.")]), Para([Text("Two.")])])])
+    ]
+}
+
+test "a footnote definition is not a link definition" {
+  # `[^1]: text` used to be read as a reference whose destination was
+  # the first word of the note.
+  let d = parser.parse("a[^1] b[c]\n\n[^1]: La primera nota.\n[c]: https://x.example")
+  assert d
+    == [
+      Para([Text("a"), NoteMark(1), Text(" b"), Link([Text("c")], "https://x.example")]),
+      Notes([note(1, [Para([Text("La primera nota.")])])])
+    ]
+}
+
+test "markers inside a quote or a list are found too" {
+  let d = parser.parse("> q[^x]\n\n[^x]: X.")
+  assert d
+    == [
+      Quote([Para([Text("q"), NoteMark(1)])]),
+      Notes([note(1, [Para([Text("X.")])])])
+    ]
+}
+
+test "a definition inside a fence is code, footnotes included" {
+  let d = parser.parse("```\n[^x]: not a note\n```\n\na[^x]")
+  assert d == [Code("", ["[^x]: not a note"]), Para([Text("a"), Text("[^x]")])]
+}

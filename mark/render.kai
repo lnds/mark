@@ -65,6 +65,21 @@ fn block(th: theme.Theme, width: Int, b: ast.Block) : [String] = match b {
   # text is not shown beside the picture — saying what it is twice is
   # what alt text exists to avoid.
   Picture(ls, _) -> ls
+  # The footnotes, under a rule that says the document proper ended.
+  # Each one is a list item whose bullet is its number, so its blocks
+  # indent under the text exactly as a list's do.
+  Notes(ns) ->
+    [paint_all(th.rule, repeat("─", int.min(width, 24)), th.reset)]
+      ++ (ns || (n => note(th, width, n)))
+}
+
+fn note(th: theme.Theme, width: Int, n: ast.Note) : [String] {
+  let marker = "[#{n.number}] "
+  indent_first(
+    paint_all(th.marker, marker, th.reset),
+    repeat(" ", marker.length()),
+    block_list(th, width - marker.length(), n.blocks)
+  )
 }
 
 # ---- Tables ----
@@ -276,6 +291,12 @@ fn styled(th: theme.Theme, xs: [ast.Inline], base: String) : [Cell] =
       # `parser.parse` resolves every reference; one reaching here came
       # from an AST built by hand, and its label is still the text.
       Ref(label, _) -> styled(th, label, base)
+      # The number the reader counts, in the marker style so it reads as
+      # a mark on the text rather than as part of it.
+      NoteMark(n) -> cells("[#{n}]", base ++ th.marker)
+      # `parser.parse` numbers every marker; one reaching here came from
+      # an AST built by hand.
+      NoteRef(label) -> cells("[^#{label}]", base)
       # An image the terminal could not draw, or that shares a line with
       # text. Its alt text is what a reader is left with, so it is marked
       # as a picture and keeps its source.

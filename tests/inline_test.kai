@@ -105,3 +105,12 @@ test "a bang that opens nothing keeps both its characters" {
   assert inline.scan("a ! b") == [Text("a ! b")]
   assert inline.scan("\\![no](x)") == [Text("!"), Link([Text("no")], "x")]
 }
+
+test "a caret makes the brackets a footnote, not a reference" {
+  assert inline.scan("nota[^1]") == [Text("nota"), NoteRef("1")]
+  assert inline.scan("[^Nota Larga]") == [NoteRef("nota larga")]
+  # Without the caret it is a reference as before.
+  assert inline.scan("[1]") == [Ref([Text("1")], "1")]
+  # An image cannot be a footnote, so the bang keeps it a reference.
+  assert inline.scan("![^x]") == [ImageRef([Text("^x")], "^x")]
+}
