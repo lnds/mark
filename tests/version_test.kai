@@ -1,0 +1,44 @@
+import encoding.toml
+import mark.cli
+
+# The version lives twice: in `kai.toml`, where the package manager reads
+# it, and in `cli.VERSION`, which is what `mark -v` and the help print.
+# Nothing in the build, the lint or the formatter notices when a bump
+# edits one and forgets the other — the binary simply reports a number
+# the manifest disagrees with, and nobody sees it until someone runs
+# `mark -v`. This is the only thing that does notice.
+#
+# It would not be needed if the toolchain handed the manifest to the
+# compiler, the way Cargo does with `CARGO_PKG_VERSION`. Until it does,
+# the duplication is real and so is the guard.
+
+fn manifest_version() : Option[String] / File = match File.read_file("kai.toml") {
+  Err(_e) -> None
+  Ok(src) -> match toml.decode(src) {
+    Some(TTbl(ps)) -> match toml.pairs_get(ps, "version") {
+      Some(TStr(v)) -> Some(v)
+      _ -> None
+    }
+    _ -> None
+  }
+}
+
+test "the version the binary prints is the version the manifest declares" {
+  # Read from the repository root, which is where `kai test .` runs.
+  match manifest_version() {
+    None -> {
+      # A manifest that cannot be read or parsed is its own failure: the
+      # guard is worthless if it passes by not looking.
+      assert false
+    }
+    Some(declared) -> {
+      assert declared == cli.VERSION
+    }
+  }
+}
+
+test "the version is three numbers, so a tag can be cut from it" {
+  let parts = string.split(cli.VERSION, ".")
+  assert parts.length() == 3
+  assert all(parts, p => to_int(p) != None)
+}

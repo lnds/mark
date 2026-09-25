@@ -11,7 +11,7 @@ screen. Pointed at a directory — or at nothing — it opens a picker over the 
 under it instead.
 
 **Actual state:** complete for what it set out to do — arguments, block parser, inline
-scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 100 tests
+scanner, theme, ANSI renderer, paging over terevaka and the file picker, with 102 tests
 and 2 property checks green.
 
 **Footnotes** are GFM's: `[^label]` in the text, `[^label]: ...` and whatever is
@@ -282,6 +282,11 @@ Every one of these cost a compile cycle here; do not repeat them.
   expression across lines; a UFCS chain does not. Break the chain inside its parentheses.
 - **`_` is not a lambda parameter.** `(i, _) => ...` is `expected `,` or `)` in call
   arguments`; give the one you ignore a name.
+- **`#[derive(Eq)]` cannot reach a tuple, though `#[derive(Show)]` can and `==` compares
+  one fine.** A `[(Int, [Block])]` inside a derived sum type fails with `no impl of Eq for
+  type Pair`, at build rather than typecheck, pointing at a line that does not exist. Use
+  a named record instead, as `ast.Note` does
+  ([kaikai#2120](https://github.com/lnds/kaikai/issues/2120)).
 - **`list.map_indexed` is not tail-recursive.** It overflows the fiber stack on a list of
   a few million — which a 3.5 MB image is, one `Int` per byte. `enumerate(xs) | f` walks
   the same ground and survives it.
@@ -299,5 +304,12 @@ repository does not.
 
 Comments are short and explain the timeless why. No ticket, branch or phase references
 inside the code: that belongs in the commit message.
+
+**The version lives twice** — `kai.toml` for the package manager, `cli.VERSION` for
+`mark -v` and the help — and a bump edits both. Nothing in the build, the lint or the
+formatter notices when one is forgotten, so `tests/version_test.kai` reads the manifest
+and asserts they agree. It would be unnecessary if the toolchain handed the manifest to
+the compiler the way Cargo does with `CARGO_PKG_VERSION`
+([kaikai#2121](https://github.com/lnds/kaikai/issues/2121)).
 
 Item docs are `#[doc("...")]` **before** `pub`, never `///`.
