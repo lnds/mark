@@ -13,7 +13,7 @@ BUILD   := build
 
 SRC := main.kai $(wildcard mark/*.kai)
 
-.PHONY: all run test lint fmt fmt-check check clean deps install uninstall \
+.PHONY: all run test lint fmt fmt-check check clean deps bump install uninstall \
         install-completions install-completion-zsh install-completion-bash \
         install-completion-fish
 
@@ -29,6 +29,12 @@ kai.lock: kai.toml
 	$(KAI_BIN) fetch
 
 deps: kai.lock
+
+# Commitizen decides the number from the commits since the last tag,
+# rewrites kai.toml and mark/cli.kai, writes the changelog and tags.
+# `cz bump --dry-run` first if you want to see it before it happens.
+bump:
+	cz bump
 
 # `kai install .` is the usual path — it drops the binary in
 # $KAIKAI_HOME/bin, already on PATH. This target is for a different

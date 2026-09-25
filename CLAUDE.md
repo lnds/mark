@@ -75,6 +75,7 @@ make check        # property checks, file by file
 make lint         # kai lint .
 make fmt          # kai fmt . (canonical formatting, whole package)
 make fmt-check    # names the files that are not formatted, without touching them
+make bump         # cz bump (version, changelog, commit and annotated tag)
 make deps         # kai fetch (regenerates kai.lock from kai.toml)
 make clean
 ```
@@ -305,11 +306,17 @@ repository does not.
 Comments are short and explain the timeless why. No ticket, branch or phase references
 inside the code: that belongs in the commit message.
 
-**The version lives twice** — `kai.toml` for the package manager, `cli.VERSION` for
-`mark -v` and the help — and a bump edits both. Nothing in the build, the lint or the
-formatter notices when one is forgotten, so `tests/version_test.kai` reads the manifest
-and asserts they agree. It would be unnecessary if the toolchain handed the manifest to
-the compiler the way Cargo does with `CARGO_PKG_VERSION`
-([kaikai#2121](https://github.com/lnds/kaikai/issues/2121)).
+**Bumps go through `cz bump`**, configured in `.cz.toml`. It reads the current version
+from the git tags, decides major/minor/patch from the conventional commits since the last
+one, rewrites both places the version lives, writes `CHANGELOG.md`, commits and tags —
+annotated, like the ones already here. `cz bump --dry-run` says what it would do without
+doing it.
+
+The version lives twice — `kai.toml` for the package manager, `cli.VERSION` for `mark -v`
+and the help — which is why `version_files` names both. Nothing in the build, the lint or
+the formatter notices when one is forgotten, so `tests/version_test.kai` reads the
+manifest and asserts they agree; it is the guard for a hand-edit that skips `cz`. All of
+it would be unnecessary if the toolchain handed the manifest to the compiler the way Cargo
+does with `CARGO_PKG_VERSION` ([kaikai#2121](https://github.com/lnds/kaikai/issues/2121)).
 
 Item docs are `#[doc("...")]` **before** `pub`, never `///`.

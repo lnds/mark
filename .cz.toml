@@ -1,0 +1,22 @@
+# Commitizen drives the version bump, the tag and the changelog.
+#
+# The version is kept in git tags, not in this file: a fourth place to
+# edit is what the bump is trying to avoid. `version_files` names the two
+# copies the build needs — the manifest the package manager reads, and
+# the constant `mark -v` prints — and `tests/version_test.kai` is what
+# notices if they ever disagree.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "scm"
+version_scheme = "semver"
+tag_format = "v$version"
+# Annotated, like the eleven tags already in this repository: a
+# lightweight one carries no message, no tagger and no date.
+annotated_tag = true
+update_changelog_on_bump = true
+changelog_file = "CHANGELOG.md"
+major_version_zero = true
+version_files = [
+  "kai.toml:^version",
+  "mark/cli.kai:VERSION"
+]
