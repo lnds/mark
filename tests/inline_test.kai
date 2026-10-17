@@ -43,6 +43,10 @@ test "escapes turn a delimiter literal" {
 test "false openings do not start emphasis" {
   assert inline.scan("2 * 3 * 4") == [Text("2 * 3 * 4")]
   assert inline.scan("snake_case_here") == [Text("snake_case_here")]
+  # Slack at either end is enough to disqualify a span, and each end
+  # has to be read: one of them tight says nothing about the other.
+  assert inline.scan("*a *") == [Text("*a *")]
+  assert inline.scan("* a*") == [Text("* a*")]
 }
 
 test "a node nests the others" {
@@ -139,6 +143,9 @@ test "a numeric entity outside the codepoints is not one" {
   assert inline.scan("&#x10FFFF;") != [Text("&#x10FFFF;")]
   # A digit the radix does not have: `a` is not decimal.
   assert inline.scan("&#1a;") == [Text("&#1a;")]
+  # One is a codepoint, low as it is: the guard is against nought.
+  assert inline.scan("&#1;") == inline.scan("&#x1;")
+  assert inline.scan("&#1;") != [Text("&#1;")]
 }
 
 test "a label closes on the balanced bracket, not the first one" {
@@ -148,8 +155,11 @@ test "a label closes on the balanced bracket, not the first one" {
     == [Link([Text("a "), Ref([Text("b")], "b"), Text(" c")], "u")]
   assert inline.scan("[t[^1]](u)") == [Link([Text("t"), NoteRef("1")], "u")]
   assert inline.scan("![a[^1]](p.png)") == [Image([Text("a"), NoteRef("1")], "p.png")]
-  # An escaped bracket is still litter rather than depth.
+  # An escaped bracket is still litter rather than depth, which only
+  # shows where the escaped one is unbalanced: a `]` taken for the end
+  # closes the label early.
   assert inline.scan("[a \\[b\\] c](u)") == [Link([Text("a [b] c")], "u")]
+  assert inline.scan("[a \\] b](u)") == [Link([Text("a ] b")], "u")]
   # Unbalanced: the outer bracket degrades to text and the inner one
   # still opens the link it is.
   assert inline.scan("[a [b c](u)") == [Text("[a "), Link([Text("b c")], "u")]
@@ -167,9 +177,17 @@ test "a hex entity takes both cases, and stops where the alphabet does" {
   assert inline.scan("&#x5A;") == [Text("Z")]
   assert inline.scan("&#xab;") == [Text("«")]
   assert inline.scan("&#xAB;") == [Text("«")]
+  # `f` and `F` are the last digits of each case, and decode.
+  assert inline.scan("&#xff;") == [Text("ÿ")]
+  assert inline.scan("&#xFF;") == [Text("ÿ")]
   # `g` is past `f`, and `G` past `F`: neither is a hex digit.
   assert inline.scan("&#xg;") == [Text("&#xg;")]
   assert inline.scan("&#xG;") == [Text("&#xG;")]
+  # Each case is a range, not a ceiling: a character under `A` is no
+  # more a digit than one over `F`, even though a shifted one would
+  # land inside the radix.
+  assert inline.scan("&#1?;") == [Text("&#1?;")]
+  assert inline.scan("&#x1^;") == [Text("&#x1^;")]
   # A hex digit is not a decimal one.
   assert inline.scan("&#a;") == [Text("&#a;")]
 }

@@ -244,3 +244,111 @@ test "a run of spaces between two words is one space" {
   assert plain("a  b", 20) == ["a b"]
   assert plain("a     b", 20) == ["a b"]
 }
+
+test "a width under the floor is raised to it" {
+  # Below `min_width` wrapping buys nothing, so what the CLI asks for is
+  # raised rather than cutting the prose into fragments.
+  assert render.min_width() == 20
+  assert plain("one two three four five", 5) == plain("one two three four five", 20)
+}
+
+test "a hard break ends the line where the source asked, in order" {
+  # The line closes with whatever is in hand, and that hand is built
+  # backwards: a line that comes out reversed is the sign of it.
+  assert plain("ab cd  \nef gh", 40) == ["ab cd", "ef gh"]
+}
+
+test "a table too narrow for its columns keeps a column of each" {
+  # Six columns leave one of the twenty to share, so each is cut to a
+  # single column rather than to none at all.
+  let src =
+    "| ab | cd | ef | gh | ij | kl |\n|---|---|---|---|---|---|\n| mn | op | qr | st | uv | wx |"
+  let six = plain(src, 20)
+  assert contains(six, "│ a │ c │ e │ g │ i │ k │")
+  assert contains(six, "│ b │ d │ f │ h │ j │ l │")
+  # A column with nothing in it is cut to one column too: a column of no
+  # width closes the frame over itself.
+  let blank =
+    "| ab | cd |  | gh | ij | kl |\n|---|---|---|---|---|---|\n| mn | op |  | st | uv | wx |"
+  assert contains(plain(blank, 20), "│ a │ c │   │ g │ i │ k │")
+  # Seven columns leave nothing to share and the widths stand as they
+  # came: a frame past the margin beats a frame with no content in it.
+  let wide =
+    "| ab | cd | ef | gh | ij | kl | mn |\n|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 |"
+  assert contains(plain(wide, 20), "│ ab │ cd │ ef │ gh │ ij │ kl │ mn │")
+}
+
+test "a character wider than its column is kept, on a line of its own" {
+  # The wrap lets a word wider than the margin out whole and `chop` cuts
+  # it by cells; a cut that takes the whole remainder leaves no row
+  # behind it.
+  let src = "| a | b | c | d | e | 日 |\n|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 本 |"
+  assert plain(src, 20)
+    == [
+      "┌───┬───┬───┬───┬───┬───┐",
+      "│ a │ b │ c │ d │ e │ 日 │",
+      "├───┼───┼───┼───┼───┼───┤",
+      "│ 1 │ 2 │ 3 │ 4 │ 5 │ 本 │",
+      "└───┴───┴───┴───┴───┴───┘"
+    ]
+  # Two of them are two lines, in the order they were written.
+  let pair = "| a | b | c | d | e | 日本 |\n|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | x |"
+  assert plain(pair, 20)
+    == [
+      "┌───┬───┬───┬───┬───┬───┐",
+      "│ a │ b │ c │ d │ e │ 日 │",
+      "│   │   │   │   │   │ 本 │",
+      "├───┼───┼───┼───┼───┼───┤",
+      "│ 1 │ 2 │ 3 │ 4 │ 5 │ x │",
+      "└───┴───┴───┴───┴───┴───┘"
+    ]
+}
+
+test "a table with no body row is as wide as its header" {
+  # The width of a column folds over the rows under it, and over none it
+  # is nought rather than one: an empty header column stays empty.
+  assert plain("|  | bb |\n|---|---|", 20)
+    == [
+      "┌──┬────┐", "│  │ bb │", "├──┼────┤",
+      "└──┴────┘"
+    ]
+}
+
+test "a container keeps a floor of four columns to write in" {
+  # Nine levels of bullets leave two of the twenty, which is narrower
+  # than a word: the floor is what keeps the text wrapping instead of
+  # running one word per line.
+  let deep =
+    "- a\n  - b\n    - c\n      - d\n        - e\n          - f\n            - g\n              - h\n                - i j k l"
+  assert contains(plain(deep, 20), "                • i j")
+  assert contains(plain(deep, 20), "                  k l")
+  # And again under a prefix wider than what is left: a heading's hashes
+  # cost seven columns of the four there are.
+  let under = plain("> > > > > > > > > ###### a b c d", 20)
+  assert any(under, l => index_of(l, "###### a b") != None)
+  assert any(under, l => index_of(l, "c d") != None)
+  # A rule is drawn to the width it is handed, so it is where the floor
+  # shows as a length rather than as a line break.
+  assert plain("> > > > > > > > > ***", 20) == ["│ │ │ │ │ │ │ │ │ ────"]
+  # And a one-column table down there has a frame that costs four of the
+  # four columns: nothing left to share, so the column stands as it is
+  # rather than being cut to one.
+  let bar = "> > > > > > > > > "
+  assert plain("#{bar}| aaa |\n#{bar}|---|\n#{bar}| b |", 20)
+    == [
+      "│ │ │ │ │ │ │ │ │ ┌─────┐",
+      "                  │ aaa │",
+      "                  ├─────┤",
+      "                  │ b   │",
+      "                  └─────┘"
+    ]
+}
+
+test "the space between two words is painted only when both sides are" {
+  # A run is not closed and reopened at every word, and where the style
+  # changes the space stays neutral: painting it would carry the colour
+  # one column past what the source marked.
+  let esc = "\u{1b}"
+  assert render.render(theme.dark(), 40, parser.parse("*a b* c"))
+    == ["#{esc}[3ma b#{esc}[0m c"]
+}

@@ -1,5 +1,6 @@
 import mark.finder
 import terevaka.term
+import terevaka.ui as ui
 
 fn docs() : [String] = ["/r/a.md", "/r/sub/b.md", "/r/sub/c.md", "/r/d.md"]
 
@@ -51,12 +52,33 @@ test "an empty list has nothing to open" {
   assert finder.current(empty) == None
   assert finder.step(empty, Enter) == Leave
   assert finder.viewport(empty) == []
+  # With no entries there is no entry to be on: the cursor stays at
+  # nought however it is pushed, rather than pointing past the list.
+  assert cur_after(empty, Printable('j')) == 0
+  assert cur_after(empty, Printable('G')) == 0
 }
 
 test "the status bar is cut to the width, never past it" {
   let m = m3()
   assert finder.status(m, 30).length() == 30
   assert finder.status(m, 8).length() == 8
+}
+
+test "the keys appear the moment the bar has room, and not a column sooner" {
+  let left = "/r  1/4"
+  let keys = "j/k move · enter open · q quit"
+  # Room to spare means at least the two columns that separate them.
+  let exact = ui.visible_len(left) + ui.visible_len(keys) + 2
+  assert finder.status(m3(), exact) == "#{left}  #{keys}"
+  assert index_of(finder.status(m3(), exact - 1), "q quit") == None
+}
+
+test "a screen of one row still has a row of body" {
+  # `rows - 1` hands one row to the status bar; what is left has to be a
+  # row of body, or the picker opens showing no files at all.
+  let tiny = finder.model(docs(), "/r", 1)
+  assert tiny.height == 1
+  assert finder.viewport(tiny) == ["a.md"]
 }
 
 # Where a key leaves the cursor, as an index rather than as another call
@@ -88,6 +110,8 @@ test "every key moves the cursor by the distance it names" {
   assert cur_after(last, Printable('b')) == 0
   assert cur_after(last, Printable('g')) == 0
   # A key the picker does not know leaves it where it was, rather than
-  # closing it on a stray byte.
+  # closing it on a stray byte — read where there is somewhere to go,
+  # since at the last entry standing still and moving down agree.
   assert cur_after(last, Tick) == 3
+  assert cur_after(first, Tick) == 0
 }

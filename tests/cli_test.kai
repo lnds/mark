@@ -46,6 +46,23 @@ test "a bad argument becomes the error to report" {
     == Invalid("unknown style: blue (dark|light|auto)")
 }
 
+test "a bad argument stops the walk where it happened" {
+  # The error is the whole report, so nothing after it may overwrite it
+  # or quietly set an option behind it.
+  let o = cli.parse_args(["-w", "x", "--width", "60", "-p", "doc.md"])
+  assert o.source == Invalid("width is not a number: x")
+  assert o.width == 0
+  assert o.pager == "auto"
+}
+
+test "one column is a width; nothing below one is" {
+  # What the parser rejects is a width that is not positive. A width too
+  # narrow to read is the renderer's floor, not this one's.
+  assert cli.parse_args(["-w", "1", "doc.md"]).width == 1
+  assert cli.parse_args(["-w", "-5", "doc.md"]).source
+    == Invalid("width must be positive: -5")
+}
+
 test "the long spelling of a flag is the short one" {
   # `walk` has an arm per spelling, and only a test keeps the two of a
   # pair agreeing about what they set.
@@ -63,6 +80,14 @@ test "every image mode is taken and nothing else is" {
   assert cli.parse_args(["--images", "never", "doc.md"]).images == "never"
   assert cli.parse_args(["--images", "ascii"]).source
     == Invalid("unknown image mode: ascii (auto|kitty|iterm|never)")
+  assert cli.parse_args(["--style", "dark", "doc.md"]).style == "dark"
+  assert cli.parse_args(["--style", "light", "doc.md"]).style == "light"
+  assert cli.parse_args(["--style", "auto", "doc.md"]).style == "auto"
+  # Every colour mode, for the same reason: each is its own comparison
+  # and only the one a test names is read.
+  assert cli.parse_args(["--color", "auto", "doc.md"]).color == "auto"
+  assert cli.parse_args(["--color", "always", "doc.md"]).color == "always"
+  assert cli.parse_args(["--color", "never", "doc.md"]).color == "never"
   assert cli.parse_args(["--color", "maybe"]).source
     == Invalid("unknown colour mode: maybe (auto|always|never)")
 }

@@ -57,6 +57,11 @@ test "code block: the body stays raw" {
   let fenced = parser.parse("```kai\nlet x = 1\n# not a heading\n```")
   assert fenced == [Code("kai", ["let x = 1", "# not a heading"])]
   assert parser.parse("```\nno language\n```") == [Code("", ["no language"])]
+  # The language is read off the fence after its indent and its spaces:
+  # a fence may be indented by up to three columns, and the tag may sit
+  # a space away from the ticks.
+  assert parser.parse("  ```kai\n  let x = 1\n  ```") == [Code("kai", ["  let x = 1"])]
+  assert parser.parse("``` kai\nlet x = 1\n```") == [Code("kai", ["let x = 1"])]
 }
 
 test "an unclosed fence runs to the end of the document" {
@@ -74,6 +79,14 @@ test "bullet and ordered lists" {
   let ordered = parser.parse("1. one\n2. two")
   assert ordered == [Ordered(1, [li([Para([Text("one")])]), li([Para([Text("two")])])])]
   assert parser.parse("3) three") == [Ordered(3, [li([Para([Text("three")])])])]
+  # An item may be indented, and its marker is as wide as the indent
+  # plus the marker: a continuation line lines up under the text, and
+  # the columns taken off it are counted from the indent. One column too
+  # few leaves a space inside a block that keeps its own spacing.
+  assert parser.parse(" 1. uno\n    dos\n 2. tres")
+    == [Ordered(1, [li([Para([Text("uno dos")])]), li([Para([Text("tres")])])])]
+  assert parser.parse(" 1. uno\n    ```\n    dos\n    ```")
+    == [Ordered(1, [li([Para([Text("uno")]), Code("", ["dos"])])])]
 }
 
 test "an item takes an indented sublist" {
@@ -227,6 +240,19 @@ test "the same marker twice is the same number, and the note appears once" {
     ]
 }
 
+test "a marker is numbered wherever it is nested" {
+  # Two walks have to cover the same ground: the one that collects the
+  # markers in the order they are cited, and the one that replaces them
+  # with their number. A node either of them skips leaves the marker as
+  # brackets, or drops a note nobody cites.
+  let d = parser.parse("**a[^b]** ~~c[^s]~~\n\n[^b]: B.\n[^s]: S.")
+  assert d
+    == [
+      Para([Strong([Text("a"), NoteMark(1)]), Text(" "), Strike([Text("c"), NoteMark(2)])]),
+      Notes([note(1, [Para([Text("B.")])]), note(2, [Para([Text("S.")])])])
+    ]
+}
+
 test "a marker nothing defines keeps its brackets, and defines no section" {
   assert parser.parse("a[^nope]") == [Para([Text("a"), Text("[^nope]")])]
 }
@@ -300,6 +326,12 @@ test "a reference resolves wherever it nests, too" {
     == [Para([Strong([Link([Text("r")], "https://x.example")])])]
   assert parser.parse("~~[r]~~\n\n[r]: https://x.example")
     == [Para([Strike([Link([Text("r")], "https://x.example")])])]
+  # A label is itself a place a reference can sit, in a link and in an
+  # image: one left unresolved shows up as brackets inside the text.
+  assert parser.parse("[see [r]](u)\n\n[r]: https://x.example")
+    == [Para([Link([Text("see "), Link([Text("r")], "https://x.example")], "u")])]
+  assert parser.parse("![alt [r]](p.png)\n\n[r]: https://x.example")
+    == [Para([Image([Text("alt "), Link([Text("r")], "https://x.example")], "p.png")])]
 }
 
 test "an ordered list and a quote carry markers like any other container" {
@@ -339,6 +371,10 @@ test "a definition's label and destination are trimmed" {
   # definition at all.
   assert parser.parse("[r]\n\n[ r ]:   https://x.example  ")
     == [Para([Link([Text("r")], "https://x.example")])]
+  # A label of blanks is no label, so neither is it a definition: the
+  # line is the paragraph it reads as.
+  assert parser.parse("[a]: /x") == []
+  assert parser.parse("[ ]: /x") != []
   # An empty destination defines nothing, so the line stays content and
   # the reference above it keeps its brackets.
   assert parser.parse("[r]\n\n[r]:   ")

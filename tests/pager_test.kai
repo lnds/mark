@@ -70,6 +70,35 @@ test "the keys show up only when there is room to spare" {
   assert index_of(pager.status(m5(), 40), "q quit") == None
 }
 
+test "a screen of one row still has a row of body" {
+  # `rows - 1` hands one row to the status bar; what is left has to be a
+  # row of body, or the pager opens on an empty screen.
+  let tiny = pager.model(doc(3), 1, "t.md")
+  assert tiny.height == 1
+  assert pager.viewport(tiny) == ["L0"]
+}
+
+test "the bar says how far down the document the window is" {
+  let m = m5()
+  assert index_of(pager.status(m, 100), " 4/10  0%") != None
+  assert index_of(pager.status(pager.scroll(m, 3), 100), " 7/10  50%") != None
+  assert index_of(pager.status(pager.scroll(m, 999), 100), " 10/10  100%") != None
+  # A document with nowhere to scroll is read in full from the start.
+  assert index_of(pager.status(pager.model(["a"], 5, "s.md"), 100), " 1/1  100%") != None
+  # One line past the screen scrolls by one, and starts at nought: a
+  # ceiling mistaken for no ceiling at all would say 100 here.
+  assert index_of(pager.status(pager.model(doc(5), 5, "x.md"), 100), " 4/5  0%") != None
+}
+
+test "the keys appear the moment the bar has room, and not a column sooner" {
+  let left = "doc.md  4/10  0%"
+  let keys = "j/k up/down scroll · space/b page · g/G ends · q quit"
+  # Room to spare means at least the two columns that separate them.
+  let exact = ui.visible_len(left) + ui.visible_len(keys) + 2
+  assert pager.status(m5(), exact) == "#{left}  #{keys}"
+  assert index_of(pager.status(m5(), exact - 1), "q quit") == None
+}
+
 fn main() : Int = 0
 
 # Where a key leaves the window, as a line number rather than as another
@@ -96,6 +125,9 @@ test "every key moves the window by the distance it names" {
   assert top_after(top, Printable('G')) == 6
   # The same keys upward, from the foot: at the top they would all clamp
   # to zero and a wrong distance would look right.
+  # A key that moves nothing has to be told from one that moves a line,
+  # which only shows away from an end.
+  assert top_after(top, Tick) == 0
   assert top_after(foot, Printable('k')) == 5
   assert top_after(foot, Up) == 5
   assert top_after(foot, Printable('b')) == 2

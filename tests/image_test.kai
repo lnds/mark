@@ -98,6 +98,10 @@ test "a PNG says its size in the header it opens with" {
   # Not a PNG, or too short to hold a header: no size to be had.
   assert is_none(image.png_size(array.from([bin.byte(1), bin.byte(2)])))
   assert is_none(image.png_size(png_header(0, 0)))
+  # Either side at nought is no size: a picture with one of them missing
+  # cannot be scaled, and half a size is worse than none.
+  assert is_none(image.png_size(png_header(320, 0)))
+  assert is_none(image.png_size(png_header(0, 120)))
 }
 
 fn cells_are(w: Int, h: Int, cw: Int, ch: Int, cols: Int, rows: Int) : Bool {
@@ -172,6 +176,17 @@ test "a tile wider than the width still gets its own band" {
 
 test "no tiles, no lines" {
   assert image.bands([], 40) == []
+  # A tile that drew nothing takes no line either, rather than a band of
+  # blanks where a picture was meant to be.
+  assert image.bands([([], 3)], 40) == []
+}
+
+test "a band takes the column between its tiles into account" {
+  # Two tiles of 4 and 5 columns need ten with the column between them,
+  # which is the boundary `pack` turns on: at ten they share a band and
+  # at nine they cannot.
+  assert image.bands([tile(4, 1, 'a'), tile(5, 1, 'b')], 10) == ["aaaa bbbbb"]
+  assert image.bands([tile(4, 1, 'a'), tile(5, 1, 'b')], 9) == ["aaaa", "bbbbb"]
 }
 
 fn head_of(bs: [Int]) : Array[Byte] = array.from(bs | (n => bin.byte(n)))
@@ -205,12 +220,19 @@ test "a kitty sequence may name the file instead of spelling it out" {
 }
 
 test "a mode said out loud is taken without asking the terminal" {
-  # `detect` only questions the terminal for `auto`; the rest are the
-  # answer, which is what makes `--images` a way out of a bad guess.
-  assert image.detect("never") == NoImages
-  assert image.detect("none") == NoImages
+  # `named` is the half of `detect` that needs no terminal: the modes
+  # that are their own answer, which is what makes `--images` a way out
+  # of a bad guess. `auto` is the one that has to ask.
+  assert image.named("never") == Some(NoImages)
+  assert image.named("none") == Some(NoImages)
+  assert image.named("kitty") == Some(Kitty)
+  assert image.named("iterm") == Some(Iterm)
+  assert image.named("auto") == None
+  assert image.named("") == None
+  # And `detect` answers with it, rather than asking anyway.
   assert image.detect("kitty") == Kitty
   assert image.detect("iterm") == Iterm
+  assert image.detect("never") == NoImages
 }
 
 test "a cell's size is read rows first, and comes back width first" {
@@ -221,6 +243,8 @@ test "a cell's size is read rows first, and comes back width first" {
   # A terminal that answers nothing usable gets no size invented for it.
   assert image.measured("#{esc()}[6;0;15") == None
   assert image.measured("#{esc()}[6;34;0") == None
+  # One pixel is a cell size; nought is the answer that means nothing.
+  assert image.measured("#{esc()}[6;1;1") == Some((1, 1))
   assert image.measured("#{esc()}[6;alto;15") == None
   assert image.measured("#{esc()}[6") == None
   assert image.measured("") == None
