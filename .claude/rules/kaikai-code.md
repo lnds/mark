@@ -55,6 +55,23 @@ disambiguates a name both modules own. Only what is outside that set is imported
 type's own `each`. It is what `main` writes to print the rendered lines and what
 `image.install` writes to send the chunks. `foreach(xs, f)` is the older spelling.
 
+## Which lines a test runs
+
+`kai test --json --coverage <file>` follows each test's record with the package source
+lines that block ran, by file. **The flags go before the spec** — after it they are taken
+and silently do nothing. Union those records over `tests/*.kai` and the complement names
+every line no test reaches, which turns closing a coverage hole into reading instead of
+guessing: kalku counts its `no_coverage` wekufe and never names them.
+
+Read the complement knowing what is not instrumented: an `fn` signature, a record field, a
+`match` arm whose body is on the next line and a closing delimiter never show as run. A
+gap is real only where an expression sits on the line.
+
+Five arms are unreachable by construction and stay uncovered for good: `fits_in`'s `[]`
+and `ceiling`'s first branch in `render.kai`, `is_rule`'s and `weave`'s `[]` in
+`parser.kai`, `trailing_noise`'s in `inline.kai`. Exhaustiveness asks for them; no input
+reaches them.
+
 ## Traps verified here
 
 Every one cost a compile cycle; do not repeat them.
