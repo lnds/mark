@@ -1,3 +1,4 @@
 build/
 .kai-cache/
 .kalku/runs.ndjson
+.kalku/equivalent.proposed
