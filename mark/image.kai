@@ -49,21 +49,35 @@ stdout redirected there is nobody to answer and the request would land
 in the output as stray bytes, which is a corruption that survives into
 whatever file was being written.
 """)]
-pub fn detect(want: String) : Protocol / Ffi + Env + Stdout + Stdin = match want {
-  "never" -> NoImages
-  "none" -> NoImages
-  "kitty" -> Kitty
-  "iterm" -> Iterm
-  _ ->
-    if not (Stdout.is_tty() and Stdin.is_tty()) {
-      NoImages
-    } else if speaks_kitty() {
-      Kitty
-    } else if looks_like_iterm() {
-      Iterm
-    } else {
-      NoImages
-    }
+pub fn detect(want: String) : Protocol / Ffi + Env + Stdout + Stdin =
+  match named(want) {
+    Some(p) -> p
+    None ->
+      if not (Stdout.is_tty() and Stdin.is_tty()) {
+        NoImages
+      } else if speaks_kitty() {
+        Kitty
+      } else if looks_like_iterm() {
+        Iterm
+      } else {
+        NoImages
+      }
+  }
+
+#[doc("""
+The protocol a mode names outright, or `None` for the one that asks.
+
+Separate from `detect` because it is the half that can be decided
+without a terminal: outside a terminal every branch of the asking half
+answers `NoImages`, which is also what `never` answers, and a test
+could not tell one from the other.
+""")]
+pub fn named(want: String) : Option[Protocol] = match want {
+  "never" -> Some(NoImages)
+  "none" -> Some(NoImages)
+  "kitty" -> Some(Kitty)
+  "iterm" -> Some(Iterm)
+  _ -> None
 }
 
 # kitty's capability query: a one-pixel transmission it is asked to
