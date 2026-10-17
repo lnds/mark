@@ -169,7 +169,10 @@ fn wrap_cell(cs: [Cell], w: Int) : [[Cell]] {
 
 fn chop(l: [Cell], w: Int, acc: [[Cell]]) : [[Cell]] =
   if cells_width(l) <= w {
-    reverse([l, ...acc])
+    # A cut that took the whole remainder leaves nothing to put on a
+    # line of its own: a double-width character in a one-column cell
+    # used to add a blank row under itself.
+    if l.is_empty() and (not acc.is_empty()) { reverse(acc) } else { reverse([l, ...acc]) }
   } else {
     let n = int.max(fits_in(l, w, 0, 0), 1)
     chop(drop(l, n), w, [take(l, n), ...acc])
