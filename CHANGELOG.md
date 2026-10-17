@@ -1,3 +1,14 @@
+## v0.10.3 (2026-10-17)
+
+### Fix
+
+- **render**: a wide character in a one-column cell left a blank row
+
+### Refactor
+
+- **inline**: one trim where there were two
+- **image**: the protocol a mode names is a decision without a terminal
+
 ## v0.10.2 (2026-10-17)
 
 ### Fix
