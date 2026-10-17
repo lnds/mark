@@ -90,18 +90,17 @@ fn definition(l: String) : Option[(String, String)] {
   if not starts_with(t, "[") {
     None
   } else {
-    match char_index_of(t, "]:") {
-      None -> None
-      Some(i) -> {
-        let label = slice(t, 1, i - 1)
-        let rest = trim(slice(t, i + 2, chars(t).length() - i - 2))
-        if is_empty(trim(label)) or is_empty(rest) {
-          None
-        } else {
-          Some((inline.fold_label(label), first_word(rest)))
-        }
-      }
-    }
+    char_index_of(t, "]:").and_then(i => defined_at(t, i))
+  }
+}
+
+fn defined_at(t: String, i: Int) : Option[(String, String)] {
+  let label = slice(t, 1, i - 1)
+  let rest = trim(slice(t, i + 2, chars(t).length() - i - 2))
+  if is_empty(trim(label)) or is_empty(rest) {
+    None
+  } else {
+    Some((inline.fold_label(label), first_word(rest)))
   }
 }
 
@@ -413,15 +412,7 @@ fn take_continuation(ls: [String], indent: Int, acc: [String]) : ([String], [Str
 fn table_at(ls: [String]) : Option[Parsed] = match ls {
   [h, d, ...rest] -> {
     let head = split_row(h)
-    match delimiter_row(d) {
-      Some(aligns) ->
-        if aligns.length() == head.length() and head.length() >= 1 {
-          Some(take_table(head, aligns, rest, []))
-        } else {
-          None
-        }
-      None -> None
-    }
+    delimiter_row(d).and_then(aligns => squared(head, aligns, rest))
   }
   _ -> None
 }
@@ -630,20 +621,15 @@ fn take_notes(ls: [String], notes: Notes, out: [String], fenced: Bool) : (Notes,
 # The label and the text left on the opening line.
 fn note_label(l: String) : Option[(String, String)] {
   let t = trim(l)
-  if not starts_with(t, "[^") {
+  if not starts_with(t, "[^") { None } else { char_index_of(t, "]:").and_then(i => noted_at(t, i)) }
+}
+
+fn noted_at(t: String, i: Int) : Option[(String, String)] {
+  let label = slice(t, 2, i - 2)
+  if is_empty(trim(label)) {
     None
   } else {
-    match char_index_of(t, "]:") {
-      None -> None
-      Some(i) -> {
-        let label = slice(t, 2, i - 2)
-        if is_empty(trim(label)) {
-          None
-        } else {
-          Some((inline.fold_label(label), trim(slice(t, i + 2, chars(t).length() - i - 2))))
-        }
-      }
-    }
+    Some((inline.fold_label(label), trim(slice(t, i + 2, chars(t).length() - i - 2))))
   }
 }
 
@@ -762,3 +748,13 @@ fn note_blocks(label: String, notes: Notes, defs: Defs) : [ast.Block] {
     find_map(notes, n => if n.fst == label { Some(n.snd) } else { None }).unwrap_or([])
   blocks(ls) | (b => resolve_block(defs, b))
 }
+
+# A header and a delimiter row that disagree on how many columns there
+# are is prose, as it is in GFM — the two lines only make a table when
+# they say the same thing.
+fn squared(head: [String], aligns: [ast.Align], rest: [String]) : Option[Parsed] =
+  if aligns.length() == head.length() and head.length() >= 1 {
+    Some(take_table(head, aligns, rest, []))
+  } else {
+    None
+  }

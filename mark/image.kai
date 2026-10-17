@@ -156,14 +156,17 @@ The size of one terminal cell in pixels, as `(width, height)`.
 is what turns an image's pixels into rows and columns, and a terminal
 that will not say leaves images drawable only where the cursor stands.
 """)]
-pub fn cell_size() : Option[(Int, Int)] / Ffi = match term.probe("#{esc()}[16t", ["t"], 300) {
-  None -> None
-  Some(reply) -> {
-    let parts = string.split(string.replace(reply, "#{esc()}[", ""), ";")
-    match (to_int(nth(parts, 1).unwrap_or("")), to_int(nth(parts, 2).unwrap_or(""))) {
-      (Some(h), Some(w)) -> if w > 0 and h > 0 { Some((w, h)) } else { None }
-      _ -> None
-    }
+pub fn cell_size() : Option[(Int, Int)] / Ffi =
+  term.probe("#{esc()}[16t", ["t"], 300).and_then(reply => measured(reply))
+
+# `CSI 6 ; height ; width t`, in that order — the answer names the rows
+# before the columns, which is the opposite of how a size is usually
+# said.
+fn measured(reply: String) : Option[(Int, Int)] {
+  let parts = string.split(string.replace(reply, "#{esc()}[", ""), ";")
+  match (to_int(nth(parts, 1).unwrap_or("")), to_int(nth(parts, 2).unwrap_or(""))) {
+    (Some(h), Some(w)) -> if w > 0 and h > 0 { Some((w, h)) } else { None }
+    _ -> None
   }
 }
 
@@ -197,12 +200,7 @@ stdin and the pager would read them as keystrokes.
 """)]
 pub fn install(id: Int, buf: Array[Byte], cols: Int, rows: Int) : Unit / Ffi {
   let cs = chunk(payload(buf))
-  foreach(
-    enumerate(cs),
-    p => term.write(
-      "#{esc()}_G#{if p.fst == 0 { "a=t,f=100,t=d,q=2,i=#{id}," } else { "" }}m=#{if p.fst == cs.length() - 1 { 0 } else { 1 }};#{p.snd}#{st()}"
-    )
-  )
+  enumerate(cs) |! (p => term.write(transmission(id, p.fst, p.snd, cs.length())))
   term.write("#{esc()}_Ga=p,U=1,q=2,i=#{id},c=#{cols},r=#{rows}#{st()}")
 }
 
@@ -309,7 +307,7 @@ fn pack(ts: [([String], Int)], width: Int, cur: [([String], Int)], out: [[String
 
 fn join_all(bs: [[String]]) : [String] = bs || (b => b)
 
-fn band_width(cur: [([String], Int)]) : Int = sum(cur | (t => t.snd)) + cur.length() - 1
+fn band_width(cur: [([String], Int)]) : Int = sum(cur | .snd) + cur.length() - 1
 
 # One band: as tall as its tallest tile, every tile padded out to its own
 # width so the columns of the next one start where they should.
@@ -410,3 +408,9 @@ pub fn sequence_path(proto: Protocol, file: String, temp: Bool) : Option[String]
     )
   _ -> None
 }
+
+# One chunk of a transmission. Only the first carries the format and the
+# id; every one says whether another follows, and the last says it does
+# not.
+fn transmission(id: Int, i: Int, chunk: String, total: Int) : String =
+  "#{esc()}_G#{if i == 0 { "a=t,f=100,t=d,q=2,i=#{id}," } else { "" }}m=#{if i == total - 1 { 0 } else { 1 }};#{chunk}#{st()}"

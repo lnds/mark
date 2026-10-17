@@ -69,8 +69,10 @@ fn block(th: theme.Theme, width: Int, b: ast.Block) : [String] = match b {
   # Each one is a list item whose bullet is its number, so its blocks
   # indent under the text exactly as a list's do.
   Notes(ns) ->
-    [paint_all(th.rule, repeat("─", int.min(width, 24)), th.reset)]
-      ++ (ns || (n => note(th, width, n)))
+    [
+      paint_all(th.rule, repeat("─", int.min(width, 24)), th.reset),
+      ...ns || (n => note(th, width, n))
+    ]
 }
 
 fn note(th: theme.Theme, width: Int, n: ast.Note) : [String] {
@@ -100,11 +102,13 @@ fn table(
   let body_cells = body | (r => styled_row(th, r))
   let cols = fit_cols(natural(head_cells, body_cells), width - frame_width(aligns.length()))
   let bar = (l, mid, r) => paint_all(th.rule, edge(l, mid, r, cols), th.reset)
-  [bar("┌", "┬", "┐")]
-    ++ row(th, head_cells, cols, aligns)
-    ++ [bar("├", "┼", "┤")]
-    ++ (body_cells || (r => row(th, r, cols, aligns)))
-    ++ [bar("└", "┴", "┘")]
+  [
+    bar("┌", "┬", "┐"),
+    ...row(th, head_cells, cols, aligns),
+    bar("├", "┼", "┤"),
+    ...body_cells || (r => row(th, r, cols, aligns)),
+    bar("└", "┴", "┘")
+  ]
 }
 
 # What the frame itself costs: a bar between every pair of columns and
@@ -148,7 +152,7 @@ fn capped(nat: [Int], c: Int) : Int = sum(nat | (w => int.min(w, c)))
 fn row(th: theme.Theme, cells: [[Cell]], cols: [Int], aligns: [ast.Align]) : [String] {
   let wrapped = zip(cells, cols) | (p => wrap_cell(p.fst, p.snd))
   let bar = paint_all(th.rule, "│", th.reset)
-  [0..(max_of(wrapped | (.length())) - 1)]
+  [0..(max_of(wrapped | .length()) - 1)]
     | (i => bar ++ row_line(th, wrapped, cols, aligns, bar, i))
 }
 
@@ -356,7 +360,7 @@ fn place(acc: [[Cell]], line: Run, word: Run, width: Int) : ([[Cell]], Run) =
     (acc, word)
   } else if line.width + 1 + word.width <= width {
     let sep = Cell { ch: ' ', style: joint_style(line.cells, word.cells) }
-    (acc, Run { cells: word.cells ++ [sep] ++ line.cells, width: line.width + 1 + word.width })
+    (acc, Run { cells: [...word.cells, sep, ...line.cells], width: line.width + 1 + word.width })
   } else {
     ([reverse(line.cells), ...acc], word)
   }

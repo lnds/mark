@@ -1,4 +1,5 @@
 import mark.pager
+import terevaka.term.{Down, Esc, Printable, Tick}
 import terevaka.ui as ui
 
 fn doc(n: Int) : [String] = [0..(n - 1)] | (i => "L#{i}")

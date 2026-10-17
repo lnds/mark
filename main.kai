@@ -229,7 +229,7 @@ fn pictures(
       Placed(_, _) -> (Picture(image.bands(ts, width), alt_of(imgs)), next)
       # Not placed, so not laid out either: the sequences go on one line
       # and the terminal decides where each picture lands.
-      _ -> (Picture([string.join(ts || (.fst), "")], alt_of(imgs)), next)
+      _ -> (Picture([string.join(ts || .fst, "")], alt_of(imgs)), next)
     }
   }
 }
@@ -339,7 +339,7 @@ fn absolute(p: String) : String / Env =
 fn intersperse_images(imgs: [([ast.Inline], String)]) : [ast.Inline] =
   intersperse(imgs | (p => ast.Image(p.fst, p.snd)), ast.Text(" "))
 
-fn alt_of(imgs: [([ast.Inline], String)]) : [ast.Inline] = imgs || (.fst)
+fn alt_of(imgs: [([ast.Inline], String)]) : [ast.Inline] = imgs || .fst
 
 # `fs.dir.list_dir` answers with the entries or with nothing at all, so
 # an empty directory reads as a file here and is caught by the read.
@@ -381,7 +381,7 @@ fn show(
   if pages_with(proto) and paginate(opts, src, lines.length()) {
     pager.run(lines, name_of(src))
   } else {
-    foreach(lines, l => Stdout.print(l))
+    lines |! (l => Stdout.print(l))
   }
 }
 
