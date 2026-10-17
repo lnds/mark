@@ -159,10 +159,12 @@ that will not say leaves images drawable only where the cursor stands.
 pub fn cell_size() : Option[(Int, Int)] / Ffi =
   term.probe("#{esc()}[16t", ["t"], 300).and_then(reply => measured(reply))
 
-# `CSI 6 ; height ; width t`, in that order — the answer names the rows
-# before the columns, which is the opposite of how a size is usually
-# said.
-fn measured(reply: String) : Option[(Int, Int)] {
+#[doc("""
+The answer to `CSI 16 t`, read: `CSI 6 ; height ; width t`, which names
+the rows before the columns — the opposite of how a size is usually
+said. Anything that does not say both is `None`.
+""")]
+pub fn measured(reply: String) : Option[(Int, Int)] {
   let parts = string.split(string.replace(reply, "#{esc()}[", ""), ";")
   match (to_int(nth(parts, 1).unwrap_or("")), to_int(nth(parts, 2).unwrap_or(""))) {
     (Some(h), Some(w)) -> if w > 0 and h > 0 { Some((w, h)) } else { None }
@@ -234,10 +236,13 @@ row, and the table has this many.
 """)]
 pub fn max_rows() : Int = diacritics().length()
 
-# kitty's rowcolumn-diacritics table, verbatim: the combining character
-# at index n is the one that means "n". Taken from the file kitty derives
-# from UnicodeData.txt, not from memory.
-fn diacritics() : [Int] = [
+#[doc("""
+kitty's rowcolumn-diacritics table, verbatim: the combining character at
+index n is the one that means "n". Taken from the file kitty derives from
+UnicodeData.txt, not from memory — a wrong entry names the wrong row and
+the picture comes out scrambled rather than missing.
+""")]
+pub fn diacritics() : [Int] = [
   0x0305, 0x030D, 0x030E, 0x0310, 0x0312, 0x033D, 0x033E, 0x033F,
   0x0346, 0x034A, 0x034B, 0x034C, 0x0350, 0x0351, 0x0352, 0x0357,
   0x035B, 0x0363, 0x0364, 0x0365, 0x0366, 0x0367, 0x0368, 0x0369,
