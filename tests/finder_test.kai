@@ -58,3 +58,36 @@ test "the status bar is cut to the width, never past it" {
   assert finder.status(m, 30).length() == 30
   assert finder.status(m, 8).length() == 8
 }
+
+# Where a key leaves the cursor, as an index rather than as another call
+# to `move_to`: comparing one call against another says nothing when the
+# clamp makes both land on the same entry.
+fn cur_after(m: finder.Model, k: term.Key) : Int = match finder.step(m, k) {
+  Stay(next) -> next.cur
+  _ -> 0 - 1
+}
+
+test "every key moves the cursor by the distance it names" {
+  # Four files in three rows of body, so the cursor runs from 0 to 3.
+  let first = m3()
+  let last = finder.move_to(first, 3)
+  # Every spelling of "open this one".
+  assert finder.step(first, Printable('o')) == Open("/r/a.md")
+  assert finder.step(first, Printable('l')) == Open("/r/a.md")
+  assert finder.step(first, Right) == Open("/r/a.md")
+  # Down by one and by a page, from the first entry.
+  assert cur_after(first, Printable('j')) == 1
+  assert cur_after(first, Down) == 1
+  assert cur_after(first, Printable(' ')) == 3
+  assert cur_after(first, Printable('f')) == 3
+  assert cur_after(first, Printable('G')) == 3
+  # The same keys upward, from the last entry: at the first they would
+  # all clamp to zero and a wrong distance would look right.
+  assert cur_after(last, Printable('k')) == 2
+  assert cur_after(last, Up) == 2
+  assert cur_after(last, Printable('b')) == 0
+  assert cur_after(last, Printable('g')) == 0
+  # A key the picker does not know leaves it where it was, rather than
+  # closing it on a stray byte.
+  assert cur_after(last, Tick) == 3
+}

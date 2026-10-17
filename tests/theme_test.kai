@@ -1,0 +1,44 @@
+import mark.theme
+
+# Every theme answers for the same roles, which is what lets the
+# renderer ask for one without knowing which it got.
+fn roles(th: theme.Theme) : [String] =
+  [
+    th.heading,
+    th.emph,
+    th.strong,
+    th.strike,
+    th.code,
+    th.link,
+    th.url,
+    th.quote,
+    th.marker,
+    th.rule
+  ]
+
+test "a theme is resolved by name, and anything else is the dark one" {
+  assert theme.by_name("light") == theme.light()
+  assert theme.by_name("plain") == theme.plain()
+  # `none` is the spelling `--color never` leaves behind.
+  assert theme.by_name("none") == theme.plain()
+  assert theme.by_name("dark") == theme.dark()
+  assert theme.by_name("azul") == theme.dark()
+}
+
+test "a coloured theme paints every role and closes them all" {
+  # The renderer closes a style with `reset`, so a theme that names a
+  # colour without one would leak it to the end of the output.
+  assert all(roles(theme.dark()), s => s != "")
+  assert all(roles(theme.light()), s => s != "")
+  assert theme.dark().reset == "\u{1b}[0m"
+  assert theme.light().reset == theme.dark().reset
+}
+
+test "the plain theme names nothing at all" {
+  # Output to a file or a pipe: an empty style is what `paint_all` reads
+  # as "write the text and nothing around it".
+  assert all(roles(theme.plain()), s => s == "")
+  assert theme.plain().reset == ""
+}
+
+fn main() : Int = 0

@@ -1,5 +1,6 @@
 import mark.pager
-import terevaka.term.{Down, Esc, Printable, Tick}
+import terevaka.term as term
+import terevaka.term.{Down, Enter, Esc, Printable, Tick, Up}
 import terevaka.ui as ui
 
 fn doc(n: Int) : [String] = [0..(n - 1)] | (i => "L#{i}")
@@ -70,3 +71,36 @@ test "the keys show up only when there is room to spare" {
 }
 
 fn main() : Int = 0
+
+# Where a key leaves the window, as a line number rather than as another
+# call to `scroll`: comparing one call against another says nothing when
+# the clamp makes both land in the same place.
+fn top_after(m: pager.Model, k: term.Key) : Int = match pager.step(m, k) {
+  Some(next) -> next.top
+  None -> 0 - 1
+}
+
+test "every key moves the window by the distance it names" {
+  # Ten lines in four rows of body, so the window runs from 0 to 6.
+  let top = m5()
+  let foot = pager.scroll(top, 999)
+  assert foot.top == 6
+  # Down by one, by a page, by half a page — from the top, where only
+  # the downward keys have anywhere to go.
+  assert top_after(top, Printable('j')) == 1
+  assert top_after(top, Down) == 1
+  assert top_after(top, Enter) == 1
+  assert top_after(top, Printable(' ')) == 4
+  assert top_after(top, Printable('f')) == 4
+  assert top_after(top, Printable('d')) == 2
+  assert top_after(top, Printable('G')) == 6
+  # The same keys upward, from the foot: at the top they would all clamp
+  # to zero and a wrong distance would look right.
+  assert top_after(foot, Printable('k')) == 5
+  assert top_after(foot, Up) == 5
+  assert top_after(foot, Printable('b')) == 2
+  assert top_after(foot, Printable('u')) == 4
+  assert top_after(foot, Printable('g')) == 0
+  # A key it does not know leaves the window where it was.
+  assert top_after(foot, Tick) == 6
+}

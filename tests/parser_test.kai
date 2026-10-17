@@ -347,3 +347,105 @@ test "a definition's label and destination are trimmed" {
       Para([Text("["), Text("r"), Text("]"), Text(":")])
     ]
 }
+
+test "a tab opens indented code as four spaces do" {
+  assert parser.parse("\tcodigo") == [Code("", ["codigo"])]
+  # A blank line inside the block belongs to it; the ones trailing do not.
+  assert parser.parse("    uno\n\n    dos") == [Code("", ["uno", "", "dos"])]
+  assert parser.parse("    uno\n\ntexto") == [Code("", ["uno"]), Para([Text("texto")])]
+}
+
+test "a note ends where its indentation does" {
+  let d = parser.parse("t[^1]\n\n[^1]: a\n\n    b\n\nfuera")
+  assert d
+    == [
+      Para([Text("t"), NoteMark(1)]),
+      Para([Text("fuera")]),
+      Notes([note(1, [Para([Text("a")]), Para([Text("b")])])])
+    ]
+}
+
+test "a setext underline of equals titles level one" {
+  assert parser.parse("T\n===") == [Heading(1, [Text("T")])]
+  assert parser.parse("T\n---") == [Heading(2, [Text("T")])]
+}
+
+test "a paragraph is interrupted by every block that may follow it" {
+  # `interrupts_para` names six shapes and each has to be the one that
+  # ends the paragraph, with no blank line between them.
+  assert parser.parse("texto\n# T") == [Para([Text("texto")]), Heading(1, [Text("T")])]
+  assert parser.parse("texto\n```\nx\n```")
+    == [Para([Text("texto")]), Code("", ["x"])]
+  assert parser.parse("texto\n> q")
+    == [Para([Text("texto")]), Quote([Para([Text("q")])])]
+  assert parser.parse("texto\n***") == [Para([Text("texto")]), Rule]
+  assert parser.parse("texto\n1. uno")
+    == [Para([Text("texto")]), Ordered(1, [li([Para([Text("uno")])])])]
+  # Three dashes with something after them are not a rule, so the
+  # paragraph swallows the line.
+  assert parser.parse("texto\n---x") == [Para([Text("texto ---x")])]
+}
+
+test "an ordered list counts its marker's digits, however many" {
+  let d = parser.parse("10. diez\n11. once")
+  assert d
+    == [Ordered(10, [li([Para([Text("diez")])]), li([Para([Text("once")])])])]
+  # The continuation lines up past a two-digit marker.
+  assert parser.parse("10. aaa\n    bbb") == [Ordered(10, [li([Para([Text("aaa bbb")])])])]
+}
+
+test "a tilde fence opens a code block as a backtick one does" {
+  # `fence_marker` names both spellings, and a fence closes only with
+  # the character that opened it.
+  assert parser.parse("~~~\nno language\n~~~") == [Code("", ["no language"])]
+  assert parser.parse("~~~kai\nlet x = 1\n~~~") == [Code("kai", ["let x = 1"])]
+  assert parser.parse("~~~\n```\n~~~") == [Code("", ["```"])]
+}
+
+test "every bullet marker opens the same list" {
+  # `bullet_marker` names three and only `-` was exercised.
+  let one = [Bullets([li([Para([Text("uno")])])])]
+  assert parser.parse("- uno") == one
+  assert parser.parse("* uno") == one
+  assert parser.parse("+ uno") == one
+  # The marker needs its space: `*uno*` is emphasis, not a list.
+  assert parser.parse("*uno*") == [Para([Emph([Text("uno")])])]
+}
+
+test "a definition's title is dropped and its destination kept" {
+  # `first_word` cuts the destination at the space, so whatever follows
+  # it is a title and says nothing the label has not said.
+  assert parser.parse("[x]: https://example.org \"El titulo\"\n\n[x]")
+    == [Para([Link([Text("x")], "https://example.org")])]
+}
+
+test "pipes alone do not open a table" {
+  # `delimiter_row` turns down a line that carries pipes but whose cells
+  # are not delimiters, which is what keeps a table out of a paragraph.
+  assert parser.parse("| a | b |\n| c | d |") == [Para([Text("| a | b | | c | d |")])]
+}
+
+test "an empty document parses to no blocks at all" {
+  assert parser.parse("") == []
+}
+
+test "a footnote with no label is not a footnote" {
+  # `noted_at` turns down an empty label, so the line is left to the
+  # passes below — where `[^]: nada` is read as a link definition that
+  # nothing cites, and a definition renders as nothing.
+  assert parser.parse("[^]: nada") == []
+}
+
+test "a note's body ends at the blank line that ends the document" {
+  # `note_body` stops at a blank line with nothing indented under it,
+  # and at the end of the document there is nothing under it at all.
+  let one = [Para([Text("a"), NoteMark(1)]), Notes([note(1, [Para([Text("N.")])])])]
+  assert parser.parse("a[^1]\n\n[^1]: N.\n") == one
+  # The blank line is the last line of the document: nothing follows it
+  # to say whether the note went on.
+  assert parser.parse("a[^1]\n\n[^1]: N.\n\n") == one
+  # What follows unindented ends the note and is a block of its own,
+  # which still comes above the notes at the foot.
+  assert parser.parse("a[^1]\n\n[^1]: N.\n\nfin")
+    == [Para([Text("a"), NoteMark(1)]), Para([Text("fin")]), Notes([note(1, [Para([Text("N.")])])])]
+}

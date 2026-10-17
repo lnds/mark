@@ -46,4 +46,36 @@ test "a bad argument becomes the error to report" {
     == Invalid("unknown style: blue (dark|light|auto)")
 }
 
+test "the long spelling of a flag is the short one" {
+  # `walk` has an arm per spelling, and only a test keeps the two of a
+  # pair agreeing about what they set.
+  assert cli.parse_args(["--help"]).source == ShowHelp
+  assert cli.parse_args(["-v"]).source == ShowVersion
+  assert cli.parse_args(["--width", "60", "doc.md"]).width == 60
+  assert cli.parse_args(["--pager", "doc.md"]).pager == "always"
+  assert cli.parse_args(["-P", "doc.md"]).pager == "never"
+}
+
+test "every image mode is taken and nothing else is" {
+  assert cli.parse_args(["--images", "auto", "doc.md"]).images == "auto"
+  assert cli.parse_args(["--images", "kitty", "doc.md"]).images == "kitty"
+  assert cli.parse_args(["--images", "iterm", "doc.md"]).images == "iterm"
+  assert cli.parse_args(["--images", "never", "doc.md"]).images == "never"
+  assert cli.parse_args(["--images", "ascii"]).source
+    == Invalid("unknown image mode: ascii (auto|kitty|iterm|never)")
+  assert cli.parse_args(["--color", "maybe"]).source
+    == Invalid("unknown colour mode: maybe (auto|always|never)")
+}
+
+test "the help names every flag the parser takes" {
+  # The help is all the documentation a user gets, so a flag added
+  # without a line here is a flag nobody finds.
+  let h = cli.help_text()
+  let flags = [
+    "-h", "--help", "-v", "--version", "-w", "--width", "-s", "--style", "--color",
+    "--images", "-p", "--pager", "-P", "--no-pager"
+  ]
+  assert all(flags, f => char_index_of(h, f) != None)
+}
+
 fn main() : Int = 0

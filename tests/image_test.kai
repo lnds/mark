@@ -188,3 +188,57 @@ test "a format is judged by the bytes it opens with, not its name" {
   assert image.format_of(head_of([137, 80])) == Other
   assert image.format_of(array.from([])) == Other
 }
+
+test "a kitty sequence may name the file instead of spelling it out" {
+  # The path travels in place of the bytes, which is what makes a 3.5 MB
+  # picture cost what a small one costs.
+  let named = base64.encode(chars("/tmp/x.png") | char_to_int)
+  assert image.sequence_path(Kitty, "/tmp/x.png", false)
+    == Some("#{esc()}_Ga=T,f=100,t=f,q=2;#{named}#{esc()}\\")
+  # `t=t` says the file was made for this and may be deleted once read.
+  assert image.sequence_path(Kitty, "/tmp/x.png", true)
+    == Some("#{esc()}_Ga=T,f=100,t=t,q=2;#{named}#{esc()}\\")
+  # Nothing else can point at a file: iTerm2's protocol carries the data.
+  assert image.sequence_path(Iterm, "/tmp/x.png", false) == None
+  assert image.sequence_path(Placed(8, 16), "/tmp/x.png", false) == None
+  assert image.sequence_path(NoImages, "/tmp/x.png", false) == None
+}
+
+test "a mode said out loud is taken without asking the terminal" {
+  # `detect` only questions the terminal for `auto`; the rest are the
+  # answer, which is what makes `--images` a way out of a bad guess.
+  assert image.detect("never") == NoImages
+  assert image.detect("none") == NoImages
+  assert image.detect("kitty") == Kitty
+  assert image.detect("iterm") == Iterm
+}
+
+test "a cell's size is read rows first, and comes back width first" {
+  # `CSI 6 ; height ; width t` is the answer, and `term.probe` hands it
+  # over without the `t` it ended on. A cell is (width, height), so the
+  # pair comes back the other way round from how the terminal said it.
+  assert image.measured("#{esc()}[6;34;15") == Some((15, 34))
+  # A terminal that answers nothing usable gets no size invented for it.
+  assert image.measured("#{esc()}[6;0;15") == None
+  assert image.measured("#{esc()}[6;34;0") == None
+  assert image.measured("#{esc()}[6;alto;15") == None
+  assert image.measured("#{esc()}[6") == None
+  assert image.measured("") == None
+}
+
+test "the diacritics table is kitty's, entry for entry" {
+  # The combining character at index n is what tells the terminal which
+  # row of the image a placeholder cell belongs to, so a single wrong
+  # entry scrambles the picture instead of losing it. A table of 297
+  # constants cannot be read by eye, so it is pinned by what a wrong
+  # value breaks: its length, its order, its ends, and its sum — the
+  # last being the only one a swapped digit cannot survive.
+  let ds = image.diacritics()
+  assert ds.length() == 297
+  assert image.max_rows() == 297
+  assert sum(ds) == 4545336
+  # Protocol order, which is also ascending: no duplicate can hide in it.
+  assert all(enumerate(drop(ds, 1)), p => p.snd > nth(ds, p.fst).unwrap_or(0))
+  assert head(ds) == Some(0x0305)
+  assert last(ds) == Some(0x1D244)
+}

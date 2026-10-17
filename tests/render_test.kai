@@ -105,8 +105,6 @@ test "the theme paints and closes the style" {
   assert out == ["a #{esc}[3mfact#{esc}[0m"]
 }
 
-fn main() : Int = 0
-
 test "a word that exactly fills the line stays on it" {
   # `place` turns on `line.width + 1 + word.width <= width`, so the
   # boundary is the line that is exactly as wide as it may be.
@@ -142,4 +140,107 @@ test "a table with no room left to share keeps the columns it has" {
     plain("| a | b | c | d | e | f | g |\n|-|-|-|-|-|-|-|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 |", 20)
   assert contains(wide, "│ a │ b │ c │ d │ e │ f │ g │")
   assert all(wide, l => text.display_width(l) == 29)
+}
+
+test "an ordered list numbers from where the source started" {
+  assert plain("1. uno\n2. dos", 20) == ["1. uno", "2. dos"]
+  assert plain("3) tres", 20) == ["3. tres"]
+  # The continuation lines up under the text, past the number.
+  assert plain("9. aaaa bbbb cccc dddd", 20) == ["9. aaaa bbbb cccc", "   dddd"]
+}
+
+test "a task box rides after the bullet, so a mixed list still lines up" {
+  assert plain("- [ ] a\n- [x] b\n- c", 20) == ["• [ ] a", "• [x] b", "• c"]
+}
+
+test "the footnotes come under a rule, numbered as the markers are" {
+  assert plain("t[^1]\n\n[^1]: nota", 20)
+    == ["t[1]", "", "────────────────────", "[1] nota"]
+  # A note holding two paragraphs indents both under its number.
+  assert plain("t[^1]\n\n[^1]: una\n\n    otra", 20)
+    == [
+      "t[1]", "", "────────────────────", "[1] una", "    ",
+      "    otra"
+    ]
+}
+
+test "strikethrough and a hard break reach the painter" {
+  assert plain("~~gone~~", 20) == ["gone"]
+  assert plain("a  \nb", 20) == ["a", "b"]
+  assert plain("a\\\nb", 20) == ["a", "b"]
+}
+
+test "an image that cannot be drawn says what it was" {
+  assert plain("![alt](p.png)", 20) == ["[alt] (p.png)"]
+  assert plain("![a](x.png) ![b](y.png)", 30) == ["[a] (x.png) [b] (y.png)"]
+}
+
+test "a link whose label is its destination does not print it twice" {
+  # `shows_dest` is what keeps an autolink from repeating itself.
+  assert plain("<https://x.example>", 30) == ["https://x.example"]
+  assert plain("<a@b.example>", 30) == ["a@b.example"]
+  assert plain("[t](https://x.example)", 30) == ["t (https://x.example)"]
+}
+
+test "a picture is already lines, and goes out as it came" {
+  # `main` is the only thing that builds one, since only it may read a
+  # file — but the arm that emits it belongs to the renderer and is
+  # testable with the block built by hand.
+  let drawn = ast.Picture(["<seq-a>", "<seq-b>"], [ast.Text("alt")])
+  assert render.render(theme.plain(), 20, [drawn]) == ["<seq-a>", "<seq-b>"]
+  # Its lines are not wrapped, however long: they carry no columns.
+  let wide = ast.Picture([repeat("x", 80)], [ast.Text("alt")])
+  assert render.render(theme.plain(), 20, [wide]) == [repeat("x", 80)]
+  # The alt text is not printed beside the picture.
+  assert not contains(render.render(theme.plain(), 20, [drawn]), "alt")
+}
+
+test "every element the theme names gets painted and closed" {
+  # One pass over the dark theme, so a style that is wired to the wrong
+  # element cannot hide behind the plain one the other tests use.
+  let esc = "\u{1b}"
+  let th = theme.dark()
+  assert render.render(th, 40, parser.parse("# T"))
+    == ["#{esc}[1;36m# #{esc}[0m#{esc}[1;36mT#{esc}[0m"]
+  assert render.render(th, 40, parser.parse("**b**")) == ["#{esc}[1mb#{esc}[0m"]
+  assert render.render(th, 40, parser.parse("~~s~~")) == ["#{esc}[9ms#{esc}[0m"]
+  assert render.render(th, 40, parser.parse("`c`")) == ["#{esc}[33mc#{esc}[0m"]
+  assert render.render(th, 40, parser.parse("    f")) == ["#{esc}[33m  f#{esc}[0m"]
+}
+
+test "a centred cell splits the gap, the odd column to the right" {
+  # `pad_to` has one arm per alignment, and centring is the one that has
+  # to decide where an odd column goes.
+  assert plain("| abcd |\n| :--: |\n| x |", 40)
+    == [
+      "┌──────┐",
+      "│ abcd │",
+      "├──────┤",
+      "│  x   │",
+      "└──────┘"
+    ]
+}
+
+test "a label that is not plain text is shown its destination" {
+  # `shows_dest` compares a single `Text` label against the destination;
+  # anything else is shown the URL, since the label does not say it.
+  assert plain("[*t*](https://x.example)", 60) == ["t (https://x.example)"]
+  # An autolink is its own destination, so the parentheses are dropped.
+  assert plain("<https://x.example>", 60) == ["https://x.example"]
+}
+
+test "an unresolved node renders as the text it still carries" {
+  # `parse` settles every reference and numbers every marker, so these
+  # arms only ever see an AST built by hand — which is what this builds.
+  let th = theme.plain()
+  assert render.render(th, 40, [ast.Para([ast.Ref([ast.Text("r")], "k")])]) == ["r"]
+  assert render.render(th, 40, [ast.Para([ast.NoteRef("n")])]) == ["[^n]"]
+  assert render.render(th, 40, [ast.Para([ast.ImageRef([ast.Text("i")], "k")])]) == ["i"]
+}
+
+test "a run of spaces between two words is one space" {
+  # `place` is called at every space and must do nothing with no word in
+  # hand, or the line would gain a column for each extra space.
+  assert plain("a  b", 20) == ["a b"]
+  assert plain("a     b", 20) == ["a b"]
 }

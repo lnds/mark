@@ -50,8 +50,6 @@ test "a node nests the others" {
   assert nested == [Strong([Text("a "), CodeSpan("c")])]
 }
 
-fn main() : Int = 0
-
 test "strikethrough is a delimiter like the others" {
   assert inline.scan("~~gone~~") == [Strike([Text("gone")])]
   assert inline.scan("~~a~~ b") == [Strike([Text("a")]), Text(" b")]
@@ -175,3 +173,102 @@ test "a hex entity takes both cases, and stops where the alphabet does" {
   # A hex digit is not a decimal one.
   assert inline.scan("&#a;") == [Text("&#a;")]
 }
+
+test "every named entity decodes to the character it names" {
+  # The table has twenty-nine names and three of them were exercised, so
+  # a wrong character in any of the other twenty-six went unnoticed.
+  # Each pair here is the name against the glyph it stands for.
+  let named = [
+    ("amp", "&"),
+    ("lt", "<"),
+    ("gt", ">"),
+    ("quot", "\""),
+    ("apos", "'"),
+    ("nbsp", " "),
+    ("hellip", "…"),
+    ("mdash", "—"),
+    ("ndash", "–"),
+    ("laquo", "«"),
+    ("raquo", "»"),
+    ("ldquo", "“"),
+    ("rdquo", "”"),
+    ("lsquo", "‘"),
+    ("rsquo", "’"),
+    ("copy", "©"),
+    ("reg", "®"),
+    ("trade", "™"),
+    ("deg", "°"),
+    ("plusmn", "±"),
+    ("times", "×"),
+    ("divide", "÷"),
+    ("bull", "•"),
+    ("middot", "·"),
+    ("larr", "←"),
+    ("rarr", "→"),
+    ("euro", "€"),
+    ("pound", "£"),
+    ("yen", "¥")
+  ]
+  assert named.length() == 29
+  assert all(named, p => inline.scan("&#{p.fst};") == [Text(p.snd)])
+  # A name the table does not have keeps its ampersand.
+  assert inline.scan("&zzz;") == [Text("&zzz;")]
+}
+
+test "the hex marker is either case, and a code span is literal" {
+  assert inline.scan("&#X41;") == [Text("A")]
+  assert inline.scan("&#x41;") == [Text("A")]
+  # Inside a code span nothing is markup.
+  assert inline.scan("`a*b*c`") == [CodeSpan("a*b*c")]
+  assert inline.scan("`[a](b)`") == [CodeSpan("[a](b)")]
+  assert inline.scan("`&amp;`") == [CodeSpan("&amp;")]
+}
+
+test "every escapable character survives its backslash" {
+  # `escapable` names them; each has to come through as itself.
+  let marks =
+    ["\\", "`", "*", "_", "[", "]", "(", ")", "#", "+", "-", ".", "!", ">", "<", "~", "&", "|"]
+  assert marks.length() == 18
+  assert all(marks, m => inline.scan("\\#{m}") == [Text(m)])
+  # A backslash before anything else stays a backslash.
+  assert inline.scan("\\q") == [Text("\\q")]
+}
+
+test "an entity that never closes is an ampersand and nothing more" {
+  # `take_entity` looks twelve characters ahead for the `;` and gives up.
+  assert inline.scan("&amp sin cierre") == [Text("&amp sin cierre")]
+  assert inline.scan("&muylargaquenocabe;") == [Text("&muylargaquenocabe;")]
+  # A numeric marker with no digits names no codepoint.
+  assert inline.scan("&#;") == [Text("&#;")]
+  assert inline.scan("&#x;") == [Text("&#x;")]
+}
+
+test "a delimiter with nothing to delimit stays literal" {
+  # `__` away from a word edge is text, as a single `_` is.
+  assert inline.scan("snake__case__here") == [Text("snake__case__here")]
+  # An empty span is not emphasis: `tight` turns down a body of nothing.
+  assert inline.scan("****") == [Text("****")]
+  # A closing run cut short closes nothing: `opens_with` runs out of
+  # text before it runs out of delimiter.
+  assert inline.scan("**a*") == [Text("**a*")]
+}
+
+test "an escaped delimiter inside a span does not close it" {
+  assert inline.scan("*a\\*b*") == [Emph([Text("a*b")])]
+  assert inline.scan("**a\\**b**") == [Strong([Text("a**b")])]
+}
+
+test "a bracket whose destination never closes keeps its text" {
+  assert inline.scan("[a](sin cierre") == [Text("[a](sin cierre")]
+  assert inline.scan("[a][sin cierre") == [Text("[a][sin cierre")]
+  assert inline.scan("![a](sin cierre") == [Text("![a](sin cierre")]
+}
+
+test "an angle that closes nothing, and one with nothing inside" {
+  # No `>` anywhere: `take_raw` finds no end and the `<` is text.
+  assert inline.scan("a < b") == [Text("a < b")]
+  # Closed but empty: neither an autolink nor a tag.
+  assert inline.scan("<>") == [Text("<>")]
+}
+
+fn main() : Int = 0
