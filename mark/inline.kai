@@ -178,10 +178,7 @@ fn destination(target: [Char]) : String {
   match drop_prefix(t, "<") {
     # Angle brackets fence the whole destination, spaces and all, so
     # nothing inside them is a title.
-    Some(fenced) -> {
-      let inner = trim(fenced)
-      trim(drop_suffix(inner, ">").unwrap_or(inner))
-    }
+    Some(fenced) -> trim(drop_suffix(fenced, ">").unwrap_or(fenced))
     # Bare, the destination runs to the first space; a title may follow.
     None -> match char_index_of(t, " ") {
       Some(i) -> slice(t, 0, i)
