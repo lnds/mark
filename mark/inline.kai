@@ -94,6 +94,13 @@ fn delimited(
 
 # The delimiter did not open anything: it goes into the buffer as plain
 # text and the scan resumes just after it.
+#
+# The buffer runs backwards, so the delimiter goes back into it
+# reversed. Every delimiter this is called with today is a palindrome
+# (`**`, `~~`, `__`, `*`, `_`), which makes the `reverse` unobservable —
+# a mutation that drops it survives any test, and rightly. It stays
+# because it is what makes the line correct rather than lucky: an
+# asymmetric delimiter would need it, and nothing here would warn.
 fn reopen(cs: [Char], close: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
   go(cs, reverse(close) ++ buf, acc)
 
@@ -110,7 +117,7 @@ fn reopen(cs: [Char], close: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inli
 # along with the bracket.
 fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline], pic: Bool) : [ast.Inline] {
   let reopened = if pic { ['[', '!', ...buf] } else { ['[', ...buf] }
-  match take_until(cs, [']'], []) {
+  match take_label(cs, 0, []) {
     None -> go(cs, reopened, acc)
     Some((label, after)) -> match after {
       ['(', ...rest] -> match take_raw(rest, [')'], []) {
@@ -168,12 +175,19 @@ fn referred(pic: Bool, label: [ast.Inline], key: String) : ast.Inline =
 # otherwise be lost.
 fn destination(target: [Char]) : String {
   let t = trim(from_chars(target))
-  let bare = drop_prefix(t, "<").unwrap_or(t)
-  let no_title = match char_index_of(bare, " ") {
-    Some(i) -> slice(bare, 0, i)
-    None -> bare
+  match drop_prefix(t, "<") {
+    # Angle brackets fence the whole destination, spaces and all, so
+    # nothing inside them is a title.
+    Some(fenced) -> {
+      let inner = trim(fenced)
+      trim(drop_suffix(inner, ">").unwrap_or(inner))
+    }
+    # Bare, the destination runs to the first space; a title may follow.
+    None -> match char_index_of(t, " ") {
+      Some(i) -> slice(t, 0, i)
+      None -> t
+    }
   }
-  drop_suffix(no_title, ">").unwrap_or(no_title)
 }
 
 fn fold_chars(cs: [Char]) : String = fold_label(from_chars(cs))
@@ -381,3 +395,20 @@ fn escapable(c: Char) : Bool =
 
 fn flush(buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
   if buf.is_empty() { acc } else { [Text(from_chars(reverse(buf))), ...acc] }
+
+# The closing bracket of a label is the balanced one, not the first:
+# `[a [b] c](u)` is one link, and `[t[^1]](u)` is a label carrying a
+# footnote marker. Depth is what tells an inner bracket from the end,
+# and an escape still hides either.
+fn take_label(cs: [Char], depth: Int, acc: [Char]) : Option[([Char], [Char])] = match cs {
+  [] -> None
+  ['\\', e, ...t] -> take_label(t, depth, [e, '\\', ...acc])
+  ['[', ...t] -> take_label(t, depth + 1, ['[', ...acc])
+  [']', ...t] ->
+    if depth == 0 {
+      Some((reverse(acc), t))
+    } else {
+      take_label(t, depth - 1, [']', ...acc])
+    }
+  [h, ...t] -> take_label(t, depth, [h, ...acc])
+}

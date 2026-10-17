@@ -106,3 +106,40 @@ test "the theme paints and closes the style" {
 }
 
 fn main() : Int = 0
+
+test "a word that exactly fills the line stays on it" {
+  # `place` turns on `line.width + 1 + word.width <= width`, so the
+  # boundary is the line that is exactly as wide as it may be.
+  assert plain("aaaaaa bbbbbb cccccc", 20) == ["aaaaaa bbbbbb cccccc"]
+  assert plain("aaaaaa bbbbbb ccccccd", 20) == ["aaaaaa bbbbbb", "ccccccd"]
+}
+
+test "a quote keeps its bar's two columns off the width it passes down" {
+  # The `2` in the Quote arm is the bar: the inner block is wrapped to
+  # eighteen, not to twenty.
+  assert plain("> aaaaaa bbbbbb cccc", 20) == ["│ aaaaaa bbbbbb cccc"]
+  assert plain("> aaaaaa bbbbbb ccccc", 20) == ["│ aaaaaa bbbbbb", "  ccccc"]
+}
+
+test "a table exactly at its budget keeps its columns, one past it gives" {
+  # `fit_cols` turns on `sum(nat) <= avail`, and the frame costs seven
+  # of the twenty: two columns of 7 and 6 fit exactly.
+  let fits = plain("| aaaaaaa | bbbbbb |\n|---|---|\n| c | d |", 20)
+  assert contains(fits, "│ aaaaaaa │ bbbbbb │")
+  assert all(fits, l => text.display_width(l) == 20)
+  # One column wider on each and they have to share what is left, so a
+  # cell wraps rather than the table overflowing.
+  let squeezed = plain("| aaaaaaaa | bbbbbbbb |\n|---|---|\n| c | d |", 20)
+  assert all(squeezed, l => text.display_width(l) <= 20)
+  assert contains(squeezed, "│ aa     │ bb     │")
+}
+
+test "a table with no room left to share keeps the columns it has" {
+  # `fit_cols` gives up when `avail <= 0`: seven columns and their frame
+  # need twenty-nine, so no sharing can make them fit in twenty. The
+  # table is drawn whole rather than collapsed to nothing.
+  let wide =
+    plain("| a | b | c | d | e | f | g |\n|-|-|-|-|-|-|-|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 |", 20)
+  assert contains(wide, "│ a │ b │ c │ d │ e │ f │ g │")
+  assert all(wide, l => text.display_width(l) == 29)
+}

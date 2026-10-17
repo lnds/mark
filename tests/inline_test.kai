@@ -62,7 +62,9 @@ test "strikethrough is a delimiter like the others" {
 
 test "a link title is dropped, its destination is not" {
   assert inline.scan("[a](b \"the title\")") == [Link([Text("a")], "b")]
-  assert inline.scan("[a](<b c>)") == [Link([Text("a")], "b")]
+  # Angle brackets fence the whole destination, so a space inside is not
+  # the start of a title.
+  assert inline.scan("[a](<b c>)") == [Link([Text("a")], "b c")]
 }
 
 test "autolinks and bare URLs are links the source spelled out" {
@@ -113,4 +115,63 @@ test "a caret makes the brackets a footnote, not a reference" {
   assert inline.scan("[1]") == [Ref([Text("1")], "1")]
   # An image cannot be a footnote, so the bang keeps it a reference.
   assert inline.scan("![^x]") == [ImageRef([Text("^x")], "^x")]
+}
+
+test "every closing punctuation ends the sentence, not the address" {
+  # `trailing_noise` names seven, and each has to be the one that decides.
+  let u = "https://x.example"
+  assert inline.scan("a #{u},") == [Text("a "), Link([Text(u)], u), Text(",")]
+  assert inline.scan("a #{u};") == [Text("a "), Link([Text(u)], u), Text(";")]
+  assert inline.scan("a #{u}:") == [Text("a "), Link([Text(u)], u), Text(":")]
+  assert inline.scan("a #{u}!") == [Text("a "), Link([Text(u)], u), Text("!")]
+  assert inline.scan("a #{u}?") == [Text("a "), Link([Text(u)], u), Text("?")]
+  assert inline.scan("(#{u})") == [Text("("), Link([Text(u)], u), Text(")")]
+  # A slash is part of the address, not punctuation after it.
+  assert inline.scan("#{u}/") == [Link([Text("#{u}/")], "#{u}/")]
+}
+
+test "a numeric entity outside the codepoints is not one" {
+  # `from_radix` guards `acc > 0 and acc <= 1114111`, and both ends matter.
+  assert inline.scan("&#0;") == [Text("&#0;")]
+  assert inline.scan("&#x0;") == [Text("&#x0;")]
+  # One past the last codepoint.
+  assert inline.scan("&#1114112;") == [Text("&#1114112;")]
+  assert inline.scan("&#x110000;") == [Text("&#x110000;")]
+  # The last codepoint itself still decodes.
+  assert inline.scan("&#x10FFFF;") != [Text("&#x10FFFF;")]
+  # A digit the radix does not have: `a` is not decimal.
+  assert inline.scan("&#1a;") == [Text("&#1a;")]
+}
+
+test "a label closes on the balanced bracket, not the first one" {
+  # `[a [b] c](u)` is one link. Cutting at the first `]` turned it into
+  # a reference followed by litter.
+  assert inline.scan("[a [b] c](u)")
+    == [Link([Text("a "), Ref([Text("b")], "b"), Text(" c")], "u")]
+  assert inline.scan("[t[^1]](u)") == [Link([Text("t"), NoteRef("1")], "u")]
+  assert inline.scan("![a[^1]](p.png)") == [Image([Text("a"), NoteRef("1")], "p.png")]
+  # An escaped bracket is still litter rather than depth.
+  assert inline.scan("[a \\[b\\] c](u)") == [Link([Text("a [b] c")], "u")]
+  # Unbalanced: the outer bracket degrades to text and the inner one
+  # still opens the link it is.
+  assert inline.scan("[a [b c](u)") == [Text("[a "), Link([Text("b c")], "u")]
+}
+
+test "a destination is trimmed of the space around it" {
+  assert inline.scan("[a](  u  )") == [Link([Text("a")], "u")]
+  assert inline.scan("[a](<  u  >)") == [Link([Text("a")], "u")]
+}
+
+test "a hex entity takes both cases, and stops where the alphabet does" {
+  # `digit_value` has one branch per case and each needs its boundary:
+  # `f` and `F` decode, the letters just past them do not.
+  assert inline.scan("&#x7a;") == [Text("z")]
+  assert inline.scan("&#x5A;") == [Text("Z")]
+  assert inline.scan("&#xab;") == [Text("«")]
+  assert inline.scan("&#xAB;") == [Text("«")]
+  # `g` is past `f`, and `G` past `F`: neither is a hex digit.
+  assert inline.scan("&#xg;") == [Text("&#xg;")]
+  assert inline.scan("&#xG;") == [Text("&#xG;")]
+  # A hex digit is not a decimal one.
+  assert inline.scan("&#a;") == [Text("&#a;")]
 }

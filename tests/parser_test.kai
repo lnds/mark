@@ -268,3 +268,82 @@ test "a definition inside a fence is code, footnotes included" {
   let d = parser.parse("```\n[^x]: not a note\n```\n\na[^x]")
   assert d == [Code("", ["[^x]: not a note"]), Para([Text("a"), Text("[^x]")])]
 }
+
+test "a footnote marker is found and numbered wherever it nests" {
+  # `marks_of` and `mark_one` walk into emphasis, link labels and alt
+  # text; a marker there has to be numbered like any other.
+  let emph = parser.parse("*nota[^a]*\n\n[^a]: A.")
+  assert emph
+    == [
+      Para([Emph([Text("nota"), NoteMark(1)])]),
+      Notes([note(1, [Para([Text("A.")])])])
+    ]
+  let inlink = parser.parse("[texto[^a]](https://x.example)\n\n[^a]: A.")
+  assert inlink
+    == [
+      Para([Link([Text("texto"), NoteMark(1)], "https://x.example")]),
+      Notes([note(1, [Para([Text("A.")])])])
+    ]
+  let inalt = parser.parse("![alt[^a]](p.png)\n\n[^a]: A.")
+  assert inalt
+    == [
+      Para([Image([Text("alt"), NoteMark(1)], "p.png")]),
+      Notes([note(1, [Para([Text("A.")])])])
+    ]
+}
+
+test "a reference resolves wherever it nests, too" {
+  # `resolve_one` has the same arms, and each needs its own case.
+  assert parser.parse("*[r]*\n\n[r]: https://x.example")
+    == [Para([Emph([Link([Text("r")], "https://x.example")])])]
+  assert parser.parse("**[r]**\n\n[r]: https://x.example")
+    == [Para([Strong([Link([Text("r")], "https://x.example")])])]
+  assert parser.parse("~~[r]~~\n\n[r]: https://x.example")
+    == [Para([Strike([Link([Text("r")], "https://x.example")])])]
+}
+
+test "an ordered list and a quote carry markers like any other container" {
+  # `marks_of`, `mark_block` and `resolve_block` each have an `Ordered`
+  # arm and a `Quote` arm that the bullet-only tests never reach.
+  let ord = parser.parse("1. uno[^a]\n\n[^a]: A.")
+  assert ord
+    == [
+      Ordered(1, [li([Para([Text("uno"), NoteMark(1)])])]),
+      Notes([note(1, [Para([Text("A.")])])])
+    ]
+  assert parser.parse("> cita [r]\n\n[r]: https://x.example")
+    == [Quote([Para([Text("cita "), Link([Text("r")], "https://x.example")])])]
+  assert parser.parse("1. [r]\n\n[r]: https://x.example")
+    == [Ordered(1, [li([Para([Link([Text("r")], "https://x.example")])])])]
+}
+
+test "the space around a block's markers is not part of its text" {
+  # Each of these has a `trim` that no test depended on: indent before a
+  # marker, space after it, space before a closing run.
+  assert parser.parse("   ## Title  ##  ") == [Heading(2, [Text("Title")])]
+  assert parser.parse("  > quoted") == [Quote([Para([Text("quoted")])])]
+  assert parser.parse("   1. one") == [Ordered(1, [li([Para([Text("one")])])])]
+  # A quote keeps one space off the bar, and no more than one.
+  assert parser.parse(">   wide") == [Quote([Para([Text("wide")])])]
+}
+
+test "a front matter fence may carry trailing space" {
+  # `strip_front_matter` trims each line before comparing it, so a fence
+  # with a space after it still closes the block.
+  assert parser.parse("---  \ntitle: x\n---  \n\n# Real") == [Heading(1, [Text("Real")])]
+  assert parser.parse("+++\ntitle = 'x'\n+++  \n\n# Real") == [Heading(1, [Text("Real")])]
+}
+
+test "a definition's label and destination are trimmed" {
+  # `defined_at` trims both sides, and an empty one on either is no
+  # definition at all.
+  assert parser.parse("[r]\n\n[ r ]:   https://x.example  ")
+    == [Para([Link([Text("r")], "https://x.example")])]
+  # An empty destination defines nothing, so the line stays content and
+  # the reference above it keeps its brackets.
+  assert parser.parse("[r]\n\n[r]:   ")
+    == [
+      Para([Text("["), Text("r"), Text("]")]),
+      Para([Text("["), Text("r"), Text("]"), Text(":")])
+    ]
+}
