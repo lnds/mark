@@ -1,0 +1,16 @@
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the kaikai kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol, so anything the toolchain prints on
+# the way up goes to stderr.
+set -eu
+
+# Every summoning is handed the reni first. This kalku is told where the
+# reni is through `hello`, so the argument is taken off here rather than
+# passed on.
+: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
+shift
+
+
+exec kalku-kaikai "$@"

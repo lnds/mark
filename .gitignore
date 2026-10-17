@@ -1,2 +1,3 @@
 build/
 .kai-cache/
+.kalku/runs.ndjson
