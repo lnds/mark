@@ -361,7 +361,7 @@ fn opens_with(cs: [Char], m: [Char]) : Bool = match m {
   [] -> true
   [x, ...xs] -> match cs {
     [] -> false
-    [y, ...ys] -> y == x and opens_with(ys, xs)
+    [y, ...ys] -> if y == x { opens_with(ys, xs) } else { false }
   }
 }
 

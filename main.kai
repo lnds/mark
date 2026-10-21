@@ -182,13 +182,12 @@ fn with_pictures(
   id: Int,
   width: Int,
   home: String
-) : ([ast.Block], Int) / File + Ffi + Process + Random + Env = match bs {
-  [] -> ([], id)
-  [b, ...rest] -> {
-    let (drawn, next) = picture_block(proto, b, id, width, home)
-    let (others, last) = with_pictures(proto, rest, next, width, home)
-    ([drawn, ...others], last)
-  }
+) : ([ast.Block], Int) / File + Ffi + Process + Random + Env {
+  let (drawn, last) = foldl(bs, ([], id), (st, b) => {
+    let (d, next) = picture_block(proto, b, st.snd, width, home)
+    ([d, ...st.fst], next)
+  })
+  (reverse(drawn), last)
 }
 
 fn picture_block(
