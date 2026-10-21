@@ -1,3 +1,14 @@
+## v0.10.4 (2026-10-21)
+
+### Fix
+
+- build on kaikai 0.170.0, which drops method-call syntax
+
+### Refactor
+
+- **inline**: say what a bracket becomes apart from how scanning goes on
+- keep two list recursions in tail position
+
 ## v0.10.3 (2026-10-17)
 
 ### Fix
