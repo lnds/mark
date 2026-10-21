@@ -115,52 +115,34 @@ fn reopen(cs: [Char], close: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inli
 # shapes are identical, so only the node they build differs — and a
 # failed image reopens with both characters, since the `!` was consumed
 # along with the bracket.
-fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline], pic: Bool) : [ast.Inline] {
-  let reopened = if pic { ['[', '!', ...buf] } else { ['[', ...buf] }
-  match take_label(cs, 0, []) {
-    None -> go(cs, reopened, acc)
-    Some((label, after)) -> match after {
-      ['(', ...rest] -> match take_raw(rest, [')'], []) {
-        Some((target, tail)) ->
-          go(tail, [], [linked(pic, scan_chars(label), destination(target)), ...flush(buf, acc)])
-        None -> go(cs, reopened, acc)
-      }
-      ['[', ...rest] -> match take_raw(rest, [']'], []) {
-        Some((key, tail)) ->
-          go(
-            tail,
-            [],
-            [
-              referred(
-                pic,
-                scan_chars(label),
-                fold_chars(if is_empty(key) { label } else { key })
-              ),
-              ...flush(buf, acc)
-            ]
-          )
-        None -> go(cs, reopened, acc)
-      }
-      # A bare `[label]` is a shortcut reference — unless it opens with a
-      # caret, which makes it a footnote marker and never a link.
-      _ -> match label {
-        # The caret only makes a footnote without the bang: `![^x]` is an
-        # image reference whose label happens to start with one.
-        ['^', ...name] ->
-          if pic {
-            go(
-              after,
-              [],
-              [referred(true, scan_chars(label), fold_chars(label)), ...flush(buf, acc)]
-            )
-          } else {
-            go(after, [], [NoteRef(fold_chars(name)), ...flush(buf, acc)])
-          }
-        _ ->
-          go(after, [], [referred(pic, scan_chars(label), fold_chars(label)), ...flush(buf, acc)])
-      }
-    }
+fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline], pic: Bool) : [ast.Inline] =
+  match take_label(cs, 0, []) || (p => link_after(pic, p.fst, p.snd)) {
+    Some((link, tail)) -> go(tail, [], [link, ...flush(buf, acc)])
+    None -> go(cs, if pic { ['[', '!', ...buf] } else { ['[', ...buf] }, acc)
   }
+
+# What a closed `[label]` turns into, given what follows it, and the text
+# left after it. `None` is an inline link or a reference left unclosed.
+fn link_after(pic: Bool, label: [Char], after: [Char]) : Option[(ast.Inline, [Char])] =
+  match after {
+    ['(', ...rest] ->
+      take_raw(rest, [')'], []) | (t => (linked(pic, scan_chars(label), destination(t.fst)), t.snd))
+    ['[', ...rest] ->
+      take_raw(rest, [']'], [])
+        | (t => (referred(pic, scan_chars(label), key_of(label, t.fst)), t.snd))
+    _ -> Some((shortcut(pic, label), after))
+  }
+
+# `[text][]` is a collapsed reference: the text is its own key.
+fn key_of(label: [Char], key: [Char]) : String = fold_chars(if is_empty(key) { label } else { key })
+
+# A bare `[label]` is a shortcut reference — unless it opens with a caret,
+# which makes it a footnote marker and never a link. The caret only makes
+# a footnote without the bang: `![^x]` is an image reference whose label
+# happens to start with one.
+fn shortcut(pic: Bool, label: [Char]) : ast.Inline = match label {
+  ['^', ...name] if not pic -> NoteRef(fold_chars(name))
+  _ -> referred(pic, scan_chars(label), fold_chars(label))
 }
 
 fn linked(pic: Bool, label: [ast.Inline], dest: String) : ast.Inline =
