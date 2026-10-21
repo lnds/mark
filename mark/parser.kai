@@ -90,13 +90,13 @@ fn definition(l: String) : Option[(String, String)] {
   if not starts_with(t, "[") {
     None
   } else {
-    char_index_of(t, "]:").and_then(i => defined_at(t, i))
+    char_index_of(t, "]:") || (i => defined_at(t, i))
   }
 }
 
 fn defined_at(t: String, i: Int) : Option[(String, String)] {
   let label = slice(t, 1, i - 1)
-  let rest = trim(slice(t, i + 2, chars(t).length() - i - 2))
+  let rest = trim(slice(t, i + 2, length(chars(t)) - i - 2))
   if is_empty(trim(label)) or is_empty(rest) {
     None
   } else {
@@ -179,7 +179,7 @@ fn block_at(ls: [String]) : Parsed =
     None -> take_para(ls, [])
   }
 
-fn first_line(ls: [String]) : String = head(ls).unwrap_or("")
+fn first_line(ls: [String]) : String = head(ls) ?? ""
 
 # ---- Horizontal rules ----
 
@@ -192,7 +192,7 @@ fn is_rule(l: String) : Bool {
   match cs {
     [] -> false
     [h, ..._] -> (h == '-' or h == '*' or h == '_')
-      and cs.length() >= 3
+      and length(cs) >= 3
       and all(cs, c => c == h)
   }
 }
@@ -201,7 +201,7 @@ fn is_rule(l: String) : Bool {
 
 fn heading_at(ls: [String]) : Option[Parsed] {
   let l = first_line(ls)
-  heading_level(l).map(n => (Heading(n, inline.scan(heading_text(l, n))), drop(ls, 1)))
+  heading_level(l) | (n => (Heading(n, inline.scan(heading_text(l, n))), drop(ls, 1)))
 }
 
 # Level 1..6 from the leading `#`. A `#` glued to the text (`#hashtag`)
@@ -229,7 +229,7 @@ fn heading_text(l: String, level: Int) : String {
 
 fn code_at(ls: [String]) : Option[Parsed] {
   let opener = first_line(ls)
-  fence_marker(opener).map(marker => take_code(opener, marker, drop(ls, 1)))
+  fence_marker(opener) | (marker => take_code(opener, marker, drop(ls, 1)))
 }
 
 # The opening fence marker, when the line opens one.
@@ -248,7 +248,7 @@ fn fence_marker(l: String) : Option[String] {
 # the document: it is closed there rather than dropping the content.
 fn take_code(opener: String, marker: String, rest: [String]) : Parsed {
   let t = trim_left(opener)
-  let lang = trim(slice(t, marker.length(), t.length() - marker.length()))
+  let lang = trim(slice(t, length(marker), length(t) - length(marker)))
   let (body, tail) = span(rest, l => fence_marker(l) != Some(marker))
   (Code(lang, body), drop(tail, 1))
 }
@@ -284,8 +284,7 @@ fn blank_run(n: Int, acc: [String]) : [String] =
   if n <= 0 { acc } else { blank_run(n - 1, ["", ...acc]) }
 
 # One level of indent only, so deeper indentation survives into the code.
-fn strip_indent(l: String) : String =
-  drop_prefix(l, "    ").or_else(() => drop_prefix(l, "\t")).unwrap_or(l)
+fn strip_indent(l: String) : String = drop_prefix(l, "    ") ?? drop_prefix(l, "\t") ?? l
 
 # ---- Quotes ----
 
@@ -302,17 +301,17 @@ fn take_quote(ls: [String]) : Parsed {
 # Drops the `>` and the space that usually follows it.
 fn strip_quote(l: String) : String {
   let t = trim_left(l)
-  let body = slice(t, 1, t.length() - 1)
-  drop_prefix(body, " ").unwrap_or(body)
+  let body = slice(t, 1, length(t) - 1)
+  drop_prefix(body, " ") ?? body
 }
 
 # ---- Lists ----
 
 fn bullets_at(ls: [String]) : Option[Parsed] =
-  bullet_marker(first_line(ls)).map(marker => take_bullets(ls, []))
+  bullet_marker(first_line(ls)) | (marker => take_bullets(ls, []))
 
 fn ordered_at(ls: [String]) : Option[Parsed] =
-  ordered_start(first_line(ls)).map(n => take_ordered(ls, n, []))
+  ordered_start(first_line(ls)) | (n => take_ordered(ls, n, []))
 
 # The bullet marker (`-`, `*` or `+` followed by a space).
 fn bullet_marker(l: String) : Option[String] {
@@ -332,7 +331,7 @@ fn bullet_marker(l: String) : Option[String] {
 fn ordered_start(l: String) : Option[Int] {
   let t = trim_left(l)
   let digits = count_digits(chars(t))
-  let after = slice(t, digits, t.length() - digits)
+  let after = slice(t, digits, length(t) - digits)
   if digits > 0 and (starts_with(after, ". ") or starts_with(after, ") ")) {
     to_int(slice(t, 0, digits))
   } else {
@@ -366,7 +365,7 @@ fn take_ordered(ls: [String], start: Int, acc: [ast.Item]) : Parsed {
 # How many columns the marker occupies counting its indent, so an item's
 # continuation lines de-indent to the same column as its text.
 fn marker_width(l: String, mark_len: Int) : Int =
-  l.length() - trim_left(l).length() + mark_len
+  length(l) - length(trim_left(l)) + mark_len
 
 # An item: its first line without the marker, plus the following
 # indented lines belonging to it, all reparsed as blocks. A task box
@@ -374,7 +373,7 @@ fn marker_width(l: String, mark_len: Int) : Int =
 # a pair of brackets in its text.
 fn take_item(ls: [String], indent: Int) : (ast.Item, [String]) {
   let l = first_line(ls)
-  let (task, head) = task_box(slice(l, indent, l.length() - indent))
+  let (task, head) = task_box(slice(l, indent, length(l) - indent))
   let (body, rest) = take_continuation(drop(ls, 1), indent, [])
   (ast.Item { task: task, blocks: blocks([head, ...body]) }, rest)
 }
@@ -384,9 +383,9 @@ fn take_item(ls: [String], indent: Int) : (ast.Item, [String]) {
 fn task_box(head: String) : (Option[Bool], String) {
   let t = trim_left(head)
   if starts_with(t, "[ ] ") {
-    (Some(false), slice(t, 4, chars(t).length() - 4))
+    (Some(false), slice(t, 4, length(chars(t)) - 4))
   } else if starts_with(t, "[x] ") or starts_with(t, "[X] ") {
-    (Some(true), slice(t, 4, chars(t).length() - 4))
+    (Some(true), slice(t, 4, length(chars(t)) - 4))
   } else {
     (None, head)
   }
@@ -399,7 +398,7 @@ fn take_continuation(ls: [String], indent: Int, acc: [String]) : ([String], [Str
       if is_blank(h) or (not starts_with(h, repeat(" ", indent))) {
         (reverse(acc), ls)
       } else {
-        take_continuation(t, indent, [slice(h, indent, h.length() - indent), ...acc])
+        take_continuation(t, indent, [slice(h, indent, length(h) - indent), ...acc])
       }
   }
 
@@ -412,7 +411,7 @@ fn take_continuation(ls: [String], indent: Int, acc: [String]) : ([String], [Str
 fn table_at(ls: [String]) : Option[Parsed] = match ls {
   [h, d, ...rest] -> {
     let head = split_row(h)
-    delimiter_row(d).and_then(aligns => squared(head, aligns, rest))
+    delimiter_row(d) || (aligns => squared(head, aligns, rest))
   }
   _ -> None
 }
@@ -426,10 +425,10 @@ fn take_table(
   acc: [[[ast.Inline]]]
 ) : Parsed {
   let l = first_line(ls)
-  if ls.is_empty() or is_blank(l) or (not has_pipe(l)) {
+  if is_empty(ls) or is_blank(l) or (not has_pipe(l)) {
     (Table(head | inline.scan, aligns, reverse(acc)), ls)
   } else {
-    let row = fit_row(split_row(l), aligns.length()) | inline.scan
+    let row = fit_row(split_row(l), length(aligns)) | inline.scan
     take_table(head, aligns, drop(ls, 1), [row, ...acc])
   }
 }
@@ -439,11 +438,11 @@ fn take_table(
 # what GFM does, and the alternative — a column the header never
 # announced — has no width and no alignment to be drawn with.
 fn fit_row(cells: [String], n: Int) : [String] {
-  let short = n - cells.length()
+  let short = n - length(cells)
   if short <= 0 { take(cells, n) } else { cells ++ list.repeat("", short) }
 }
 
-fn has_pipe(l: String) : Bool = chars(l).contains('|')
+fn has_pipe(l: String) : Bool = contains(chars(l), '|')
 
 # The delimiter row: every cell a run of `-` with an optional `:` at
 # either end. It must carry a pipe of its own, which is what keeps a
@@ -454,7 +453,7 @@ fn delimiter_row(l: String) : Option[[ast.Align]] =
     None
   } else {
     let cells = split_row(l)
-    if cells.is_empty() or (not all(cells, is_delimiter)) {
+    if is_empty(cells) or (not all(cells, is_delimiter)) {
       None
     } else {
       Some(cells | alignment)
@@ -477,7 +476,7 @@ fn alignment(c: String) : ast.Align {
 
 fn drop_edge(s: String, edge: String, front: Bool) : String {
   let dropped = if front { drop_prefix(s, edge) } else { drop_suffix(s, edge) }
-  dropped.unwrap_or(s)
+  dropped ?? s
 }
 
 # Splits a row on its unescaped pipes, dropping the optional outer pair
@@ -508,9 +507,9 @@ fn take_para(ls: [String], acc: [String]) : Parsed = match ls {
   [] -> (para_of(acc), [])
   [h, ...t] ->
     match setext_level(h) {
-      Some(n) if acc.length() > 0 -> (Heading(n, inline.scan(para_text(acc))), t)
+      Some(n) if length(acc) > 0 -> (Heading(n, inline.scan(para_text(acc))), t)
       _ ->
-        if acc.length() > 0 and (is_blank(h) or interrupts_para(h)) {
+        if length(acc) > 0 and (is_blank(h) or interrupts_para(h)) {
           (para_of(acc), ls)
         } else {
           take_para(t, [h, ...acc])
@@ -565,7 +564,7 @@ fn hard_break(l: String) : Bool = ends_with(l, "  ") or ends_with(l, "\\")
 # An ordinary line pays only for the trim it always paid for.
 fn body_of(l: String, hard: Bool) : String {
   let t = trim(l)
-  if hard { trim(drop_suffix(t, "\\").unwrap_or(t)) } else { t }
+  if hard { trim(drop_suffix(t, "\\") ?? t) } else { t }
 }
 
 fn para_of(acc: [String]) : ast.Block = Para(inline.scan(para_text(acc)))
@@ -580,9 +579,9 @@ fn interrupts_para(l: String) : Bool =
 
 # ---- Character helpers ----
 
-fn count_prefix(cs: [Char], c: Char) : Int = take_while(cs, h => h == c).length()
+fn count_prefix(cs: [Char], c: Char) : Int = length(take_while(cs, h => h == c))
 
-fn count_digits(cs: [Char]) : Int = take_while(cs, is_digit).length()
+fn count_digits(cs: [Char]) : Int = length(take_while(cs, is_digit))
 
 fn drop_suffix_run(s: String, suffix: String) : String =
   match drop_suffix(s, suffix) {
@@ -621,7 +620,7 @@ fn take_notes(ls: [String], notes: Notes, out: [String], fenced: Bool) : (Notes,
 # The label and the text left on the opening line.
 fn note_label(l: String) : Option[(String, String)] {
   let t = trim(l)
-  if not starts_with(t, "[^") { None } else { char_index_of(t, "]:").and_then(i => noted_at(t, i)) }
+  if not starts_with(t, "[^") { None } else { char_index_of(t, "]:") || (i => noted_at(t, i)) }
 }
 
 fn noted_at(t: String, i: Int) : Option[(String, String)] {
@@ -629,7 +628,7 @@ fn noted_at(t: String, i: Int) : Option[(String, String)] {
   if is_empty(trim(label)) {
     None
   } else {
-    Some((inline.fold_label(label), trim(slice(t, i + 2, chars(t).length() - i - 2))))
+    Some((inline.fold_label(label), trim(slice(t, i + 2, length(chars(t)) - i - 2))))
   }
 }
 
@@ -659,7 +658,7 @@ fn note_body(ls: [String], acc: [String]) : ([String], [String]) = match ls {
 fn number_notes(doc: [ast.Block], notes: Notes, defs: Defs) : [ast.Block] {
   let used = cited(doc, notes, [])
   let numbered = doc | (b => mark_block(used, b))
-  if used.is_empty() { numbered } else { numbered ++ [note_section(used, notes, defs)] }
+  if is_empty(used) { numbered } else { numbered ++ [note_section(used, notes, defs)] }
 }
 
 # The labels that both a marker points at and a definition explains, in
@@ -744,8 +743,7 @@ fn note_section(used: [String], notes: Notes, defs: Defs) : ast.Block =
   )
 
 fn note_blocks(label: String, notes: Notes, defs: Defs) : [ast.Block] {
-  let ls: [String] =
-    find_map(notes, n => if n.fst == label { Some(n.snd) } else { None }).unwrap_or([])
+  let ls: [String] = find_map(notes, n => if n.fst == label { Some(n.snd) } else { None }) ?? []
   blocks(ls) | (b => resolve_block(defs, b))
 }
 
@@ -753,7 +751,7 @@ fn note_blocks(label: String, notes: Notes, defs: Defs) : [ast.Block] {
 # are is prose, as it is in GFM — the two lines only make a table when
 # they say the same thing.
 fn squared(head: [String], aligns: [ast.Align], rest: [String]) : Option[Parsed] =
-  if aligns.length() == head.length() and head.length() >= 1 {
+  if length(aligns) == length(head) and length(head) >= 1 {
     Some(take_table(head, aligns, rest, []))
   } else {
     None

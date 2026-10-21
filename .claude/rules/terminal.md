@@ -25,7 +25,7 @@ TUI framework. It is **TEA**: a `Model`, an `update(model, key) -> Step[m]` and 
 
 | Module | For what |
 |---|---|
-| `terevaka.app` | `run` / `run_overlay`, `Step[m]` (`keep` / `quit`). The loop. |
+| `terevaka.app` | `run` / `run_overlay`, `Step[m]` (`keep` / `quit`). The loop; `Err` when stdin cannot take keys. |
 | `terevaka.ui` | The `Ui` value tree and `render(Ui) : [String]`. **Pure** — views test by equality. |
 | `terevaka.term` | Raw mode, `poll_key`, `probe`, `rows`/`cols`, ANSI builders. The only one carrying `Ffi`. |
 | `terevaka.widget.*` | `menu`, `listbox`, `input`, `form`, `popup`, `confirm`, `statusbar`, `board`. |

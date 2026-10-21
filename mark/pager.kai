@@ -49,7 +49,7 @@ pub fn scroll(m: Model, delta: Int) : Model =
 #[doc("The visible lines, padded out to the height of the window.")]
 pub fn viewport(m: Model) : [String] {
   let shown = take(drop(m.lines, m.top), m.height)
-  shown ++ list.repeat("", m.height - shown.length())
+  shown ++ list.repeat("", m.height - length(shown))
 }
 
 #[doc("""
@@ -57,15 +57,15 @@ The status bar: name, position and the keys. It is cut to the width so
 it can never push the body up by a row.
 """)]
 pub fn status(m: Model, width: Int) : String {
-  let last = int.min(m.top + m.height, m.lines.length())
-  let left = "#{m.name}  #{last}/#{m.lines.length()}  #{percent(m)}%"
+  let last = int.min(m.top + m.height, length(m.lines))
+  let left = "#{m.name}  #{last}/#{length(m.lines)}  #{percent(m)}%"
   let keys = "j/k up/down scroll · space/b page · g/G ends · q quit"
   ui.cell(fit_both(left, keys, width), width)
 }
 
 # The scroll ceiling: the last line ends up at the foot, never in the
 # middle of a half-empty screen.
-fn last_top(m: Model) : Int = int.max(m.lines.length() - m.height, 0)
+fn last_top(m: Model) : Int = int.max(length(m.lines) - m.height, 0)
 
 fn percent(m: Model) : Int =
   if last_top(m) == 0 { 100 } else { m.top * 100 / last_top(m) }
@@ -91,8 +91,8 @@ pub fn step(m: Model, k: term.Key) : Option[Model] = match k {
   Printable('b') -> Some(scroll(m, 0 - m.height))
   Printable('d') -> Some(scroll(m, m.height / 2))
   Printable('u') -> Some(scroll(m, 0 - m.height / 2))
-  Printable('g') -> Some(scroll(m, 0 - m.lines.length()))
-  Printable('G') -> Some(scroll(m, m.lines.length()))
+  Printable('g') -> Some(scroll(m, 0 - length(m.lines)))
+  Printable('G') -> Some(scroll(m, length(m.lines)))
   _ -> Some(scroll(m, 0))
 }
 
@@ -102,8 +102,11 @@ frame's top margin and another to the status bar.
 """)]
 pub fn body_rows(rows: Int) : Int = int.max(rows - 2, 1)
 
-#[doc("Opens the pager and does not return until it is exited.")]
-pub fn run(lines: [String], name: String) : Unit / Ffi {
+#[doc("""
+Opens the pager and does not return until it is exited. `Err` is a
+terminal that cannot take keys, said in words fit to show the user.
+""")]
+pub fn run(lines: [String], name: String) : Result[Unit, String] / Ffi {
   let m = model(lines, body_rows(term.rows()) + 1, name)
   let width = term.cols() - margin()
   app.run(

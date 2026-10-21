@@ -39,6 +39,6 @@ test "the version the binary prints is the version the manifest declares" {
 
 test "the version is three numbers, so a tag can be cut from it" {
   let parts = string.split(cli.VERSION, ".")
-  assert parts.length() == 3
+  assert length(parts) == 3
   assert all(parts, p => to_int(p) != None)
 }

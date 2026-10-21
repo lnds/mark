@@ -27,7 +27,7 @@ make all
 
 The end."""
   let bs = parser.parse(doc)
-  assert bs.length() == 9
+  assert length(bs) == 9
   assert nth(bs, 0) == Some(Heading(1, [Text("Title")]))
   assert nth(bs, 1) == Some(Para([Text("A paragraph spread over several adjacent lines.")]))
   assert nth(bs, 2) == Some(Heading(2, [Text("Section")]))

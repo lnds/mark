@@ -134,7 +134,7 @@ fn take_link(cs: [Char], buf: [Char], acc: [ast.Inline], pic: Bool) : [ast.Inlin
               referred(
                 pic,
                 scan_chars(label),
-                fold_chars(if key.is_empty() { label } else { key })
+                fold_chars(if is_empty(key) { label } else { key })
               ),
               ...flush(buf, acc)
             ]
@@ -178,7 +178,7 @@ fn destination(target: [Char]) : String {
   match drop_prefix(t, "<") {
     # Angle brackets fence the whole destination, spaces and all, so
     # nothing inside them is a title.
-    Some(fenced) -> trim(drop_suffix(fenced, ">").unwrap_or(fenced))
+    Some(fenced) -> trim(drop_suffix(fenced, ">") ?? fenced)
     # Bare, the destination runs to the first space; a title may follow.
     None -> match char_index_of(t, " ") {
       Some(i) -> slice(t, 0, i)
@@ -237,7 +237,7 @@ fn take_bare_url(cs: [Char], buf: [Char]) : Option[(String, [Char])] =
     None
   } else if opens_with(cs, chars("http://")) or opens_with(cs, chars("https://")) {
     let (raw, rest) = span(cs, c => c != ' ' and c != '<' and c != '\n')
-    let n = raw.length() - trailing_noise(reverse(raw), 0)
+    let n = length(raw) - trailing_noise(reverse(raw), 0)
     if n <= 0 { None } else { Some((from_chars(take(raw, n)), drop(cs, n))) }
   } else {
     None
@@ -263,7 +263,7 @@ fn take_entity(cs: [Char], buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
   match take_raw(take(cs, 12), [';'], []) {
     None -> go(cs, ['&', ...buf], acc)
     Some((name, _)) -> match entity(from_chars(name)) {
-      Some(c) -> go(drop(cs, name.length() + 1), [c, ...buf], acc)
+      Some(c) -> go(drop(cs, length(name) + 1), [c, ...buf], acc)
       None -> go(cs, ['&', ...buf], acc)
     }
   }
@@ -303,9 +303,9 @@ fn entity(name: String) : Option[Char] = match name {
 
 # `&#8212;` and `&#x2014;` name the codepoint outright.
 fn numeric_entity(name: String) : Option[Char] = match chars(name) {
-  ['#', 'x', ...digits] -> from_radix(digits, 16, 0).map(n => int_to_char(n))
-  ['#', 'X', ...digits] -> from_radix(digits, 16, 0).map(n => int_to_char(n))
-  ['#', ...digits] -> from_radix(digits, 10, 0).map(n => int_to_char(n))
+  ['#', 'x', ...digits] -> from_radix(digits, 16, 0) | int_to_char
+  ['#', 'X', ...digits] -> from_radix(digits, 16, 0) | int_to_char
+  ['#', ...digits] -> from_radix(digits, 10, 0) | int_to_char
   _ -> None
 }
 
@@ -338,7 +338,7 @@ fn take_until(cs: [Char], close: [Char], acc: [Char]) : Option[([Char], [Char])]
     ['\\', e, ...t] -> take_until(t, close, [e, '\\', ...acc])
     [h, ...t] ->
       if opens_with(cs, close) {
-        Some((reverse(acc), drop(cs, close.length())))
+        Some((reverse(acc), drop(cs, length(close))))
       } else {
         take_until(t, close, [h, ...acc])
       }
@@ -351,7 +351,7 @@ fn take_raw(cs: [Char], close: [Char], acc: [Char]) : Option[([Char], [Char])] =
     [] -> None
     [h, ...t] ->
       if opens_with(cs, close) {
-        Some((reverse(acc), drop(cs, close.length())))
+        Some((reverse(acc), drop(cs, length(close))))
       } else {
         take_raw(t, close, [h, ...acc])
       }
@@ -391,7 +391,7 @@ fn escapable(c: Char) : Bool =
   )
 
 fn flush(buf: [Char], acc: [ast.Inline]) : [ast.Inline] =
-  if buf.is_empty() { acc } else { [Text(from_chars(reverse(buf))), ...acc] }
+  if is_empty(buf) { acc } else { [Text(from_chars(reverse(buf))), ...acc] }
 
 # The closing bracket of a label is the balanced one, not the first:
 # `[a [b] c](u)` is one link, and `[t[^1]](u)` is a label carrying a

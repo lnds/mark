@@ -51,7 +51,7 @@ Moves the cursor `delta` entries, without leaving the list, and drags
 the window along only as far as it must to keep the cursor in view.
 """)]
 pub fn move_to(m: Model, delta: Int) : Model {
-  let cur = clamp(m.cur + delta, 0, int.max(m.files.length() - 1, 0))
+  let cur = clamp(m.cur + delta, 0, int.max(length(m.files) - 1, 0))
   Model { ...m, cur: cur, top: clamp(m.top, cur - m.height + 1, cur) }
 }
 
@@ -66,11 +66,11 @@ pub fn current(m: Model) : Option[String] = nth(m.files, m.cur)
 
 #[doc("How an entry reads on screen: its path, less the root it shares.")]
 pub fn shown(m: Model, path: String) : String =
-  drop_prefix(path, "#{drop_suffix(m.root, "/").unwrap_or(m.root)}/").unwrap_or(path)
+  drop_prefix(path, "#{drop_suffix(m.root, "/") ?? m.root}/") ?? path
 
 #[doc("The status bar: where the cursor is in the list, and the keys.")]
 pub fn status(m: Model, width: Int) : String {
-  let left = "#{m.root}  #{int.min(m.cur + 1, m.files.length())}/#{m.files.length()}"
+  let left = "#{m.root}  #{int.min(m.cur + 1, length(m.files))}/#{length(m.files)}"
   ui.cell(fit_both(left, "j/k move · enter open · q quit", width), width)
 }
 
@@ -104,8 +104,8 @@ pub fn step(m: Model, k: term.Key) : Choice = match k {
   Printable(' ') -> Stay(move_to(m, m.height))
   Printable('f') -> Stay(move_to(m, m.height))
   Printable('b') -> Stay(move_to(m, 0 - m.height))
-  Printable('g') -> Stay(move_to(m, 0 - m.files.length()))
-  Printable('G') -> Stay(move_to(m, m.files.length()))
+  Printable('g') -> Stay(move_to(m, 0 - length(m.files)))
+  Printable('G') -> Stay(move_to(m, length(m.files)))
   _ -> Stay(move_to(m, 0))
 }
 
@@ -116,13 +116,18 @@ fn open(m: Model) : Choice = match current(m) {
 
 #[doc("""
 Opens the picker and returns the file chosen, or `None` if it was left
-without choosing one.
+without choosing one. `Err` is a terminal that cannot take keys.
 
-`app.run` owns the loop and gives nothing back, so the choice is
-recorded in a cell the update closes over — the one piece of state here
-that is not carried in the model.
+`app.run` owns the loop and gives back only whether it could run, so
+the choice is recorded in a cell the update closes over — the one piece
+of state here that is not carried in the model.
 """)]
-pub fn run(files: [String], root: String, rows: Int, width: Int) : Option[String] / Ffi {
+pub fn run(
+  files: [String],
+  root: String,
+  rows: Int,
+  width: Int
+) : Result[Option[String], String] / Ffi {
   var chosen := None
   app.run(
     model(files, root, rows),
@@ -136,8 +141,8 @@ pub fn run(files: [String], root: String, rows: Int, width: Int) : Option[String
     },
     m => ui.col((rows_of(m) | ui.text) ++ [ui.text(status(m, width))]),
     120
-  )
-  chosen
+  )!
+  Ok(chosen)
 }
 
 # The cursor is drawn rather than coloured: a picker whose highlight is

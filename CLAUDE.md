@@ -6,8 +6,8 @@ glow: a CLI that renders a file (or stdin) to ANSI and exits, and a pager that w
 screen. Pointed at a directory — or at nothing — it opens a picker over the markdown under
 it instead.
 
-**State:** complete for what it set out to do, with 161 tests and 2 property checks green
-on **kai 0.161.0**. It renders GFM: headings both forms, wrapped paragraphs, fenced and
+**State:** complete for what it set out to do, with 177 tests and 2 property checks green
+on **kai 0.170.0**. It renders GFM: headings both forms, wrapped paragraphs, fenced and
 indented code, nested quotes, lists with sublists and task boxes, tables, footnotes,
 strikethrough, every link spelling, entities, hard breaks, and images drawn through the
 kitty or iTerm2 protocol.

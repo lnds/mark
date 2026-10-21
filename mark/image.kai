@@ -96,9 +96,8 @@ fn speaks_kitty() : Bool / Ffi = match term.probe(
 # iTerm2 ships no query, so this is the environment or nothing.
 # `LC_TERMINAL` is the one that survives ssh, since iTerm2 forwards it
 # on purpose; `TERM_PROGRAM` is local only.
-fn looks_like_iterm() : Bool / Env =
-  env.get("LC_TERMINAL").unwrap_or("") == "iTerm2"
-    or env.get("TERM_PROGRAM").unwrap_or("") == "iTerm.app"
+fn looks_like_iterm() : Bool / Env = (env.get("LC_TERMINAL") ?? "") == "iTerm2"
+  or (env.get("TERM_PROGRAM") ?? "") == "iTerm.app"
 
 #[doc("""
 The escape sequence that draws `bytes`, or `None` for a protocol that
@@ -116,7 +115,7 @@ pub fn sequence(proto: Protocol, buf: Array[Byte]) : Option[String] = match prot
   Placed(_, _) -> None
   Iterm -> {
     let bytes = payload(buf)
-    Some("#{esc()}]1337;File=inline=1;size=#{bytes.length()}:#{base64.encode(bytes)}#{bel()}")
+    Some("#{esc()}]1337;File=inline=1;size=#{length(bytes)}:#{base64.encode(bytes)}#{bel()}")
   }
   # kitty takes PNG or raw pixels. Handing it anything else under `f=100`
   # is a lie the terminal cannot catch and the reader sees as nothing at
@@ -133,7 +132,7 @@ pub fn sequence(proto: Protocol, buf: Array[Byte]) : Option[String] = match prot
 # read back out of the buffer by index — `bin.get_uint_be` over one byte
 # is the accessor the stdlib gives for exactly this.
 fn payload(buf: Array[Byte]) : [Int] =
-  enumerate(array.to_list(buf)) | (p => bin.get_uint_be(buf, p.fst, 1).unwrap_or(0))
+  enumerate(array.to_list(buf)) | (p => bin.get_uint_be(buf, p.fst, 1) ?? 0)
 
 # The protocol caps an escape sequence at 4096 base64 characters, which
 # is exactly what 3072 bytes encode to. Cutting the bytes rather than the
@@ -171,7 +170,7 @@ is what turns an image's pixels into rows and columns, and a terminal
 that will not say leaves images drawable only where the cursor stands.
 """)]
 pub fn cell_size() : Option[(Int, Int)] / Ffi =
-  term.probe("#{esc()}[16t", ["t"], 300).and_then(reply => measured(reply))
+  term.probe("#{esc()}[16t", ["t"], 300) || measured
 
 #[doc("""
 The answer to `CSI 16 t`, read: `CSI 6 ; height ; width t`, which names
@@ -180,7 +179,7 @@ said. Anything that does not say both is `None`.
 """)]
 pub fn measured(reply: String) : Option[(Int, Int)] {
   let parts = string.split(string.replace(reply, "#{esc()}[", ""), ";")
-  match (to_int(nth(parts, 1).unwrap_or("")), to_int(nth(parts, 2).unwrap_or(""))) {
+  match (to_int(nth(parts, 1) ?? ""), to_int(nth(parts, 2) ?? "")) {
     (Some(h), Some(w)) -> if w > 0 and h > 0 { Some((w, h)) } else { None }
     _ -> None
   }
@@ -216,7 +215,7 @@ stdin and the pager would read them as keystrokes.
 """)]
 pub fn install(id: Int, buf: Array[Byte], cols: Int, rows: Int) : Unit / Ffi {
   let cs = chunk(payload(buf))
-  enumerate(cs) |! (p => term.write(transmission(id, p.fst, p.snd, cs.length())))
+  enumerate(cs) |! (p => term.write(transmission(id, p.fst, p.snd, length(cs))))
   term.write("#{esc()}_Ga=p,U=1,q=2,i=#{id},c=#{cols},r=#{rows}#{st()}")
 }
 
@@ -237,7 +236,7 @@ fn grid_row(id: Int, row: Int, cols: Int) : String {
   # The image id rides in the foreground colour, which is why the run has
   # to be closed again: the cells after it are text.
   let fg = "#{esc()}[38;2;#{id / 65536 % 256};#{id / 256 % 256};#{id % 256}m"
-  let first = "#{PLACEHOLDER}#{from_chars([int_to_char(nth(diacritics(), row).unwrap_or(0x0305))])}"
+  let first = "#{PLACEHOLDER}#{from_chars([int_to_char(nth(diacritics(), row) ?? 0x0305)])}"
   "#{fg}#{first}#{repeat(PLACEHOLDER, int.max(cols - 1, 0))}#{esc()}[39m"
 }
 
@@ -248,7 +247,7 @@ pub const PLACEHOLDER : String = "\u{10EEEE}"
 How many rows an image may be given a placement over: one diacritic per
 row, and the table has this many.
 """)]
-pub fn max_rows() : Int = diacritics().length()
+pub fn max_rows() : Int = length(diacritics())
 
 #[doc("""
 kitty's rowcolumn-diacritics table, verbatim: the combining character at
@@ -315,9 +314,9 @@ pub fn bands(tiles: [([String], Int)], width: Int) : [String] =
 
 fn pack(ts: [([String], Int)], width: Int, cur: [([String], Int)], out: [[String]]) : [String] =
   match ts {
-    [] -> join_all(reverse(if cur.is_empty() { out } else { [merge(reverse(cur)), ...out] }))
+    [] -> join_all(reverse(if is_empty(cur) { out } else { [merge(reverse(cur)), ...out] }))
     [t, ...rest] ->
-      if cur.is_empty() or band_width(cur) + 1 + t.snd <= width {
+      if is_empty(cur) or band_width(cur) + 1 + t.snd <= width {
         pack(rest, width, [t, ...cur], out)
       } else {
         pack(rest, width, [t], [merge(reverse(cur)), ...out])
@@ -326,7 +325,7 @@ fn pack(ts: [([String], Int)], width: Int, cur: [([String], Int)], out: [[String
 
 fn join_all(bs: [[String]]) : [String] = bs || (b => b)
 
-fn band_width(cur: [([String], Int)]) : Int = sum(cur | .snd) + cur.length() - 1
+fn band_width(cur: [([String], Int)]) : Int = sum(cur | .snd) + length(cur) - 1
 
 # One band: as tall as its tallest tile, every tile padded out to its own
 # width so the columns of the next one start where they should.
@@ -335,8 +334,7 @@ fn merge(cur: [([String], Int)]) : [String] {
   [0..(h - 1)] | (r => string.join(cur | (t => line_at(t, r)), " "))
 }
 
-fn line_at(t: ([String], Int), r: Int) : String =
-  nth(t.fst, r).unwrap_or(repeat(" ", t.snd))
+fn line_at(t: ([String], Int), r: Int) : String = nth(t.fst, r) ?? repeat(" ", t.snd)
 
 fn max_of(xs: [Int]) : Int = foldl(xs, 0, int.max)
 
@@ -370,7 +368,7 @@ pub fn format_of(buf: Array[Byte]) : Format =
     Other
   }
 
-fn opens_with(buf: Array[Byte], magic: [Int]) : Bool = at(buf, 0, magic.length()) == magic
+fn opens_with(buf: Array[Byte], magic: [Int]) : Bool = at(buf, 0, length(magic)) == magic
 
 # The `n` bytes at `from`, or a short list at the end of the buffer —
 # which never equals a magic number and so reads as "not this format".

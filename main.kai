@@ -34,7 +34,7 @@ fn load(src: cli.Source) : Result[String, String] / File + Stdin {
   case ShowHelp -> Ok(cli.help_text())
   case ShowVersion -> Ok("mark #{cli.VERSION}")
   case FromStdin -> Ok(read_stdin([]))
-  case FromFile(p) -> File.read_file(p).map_err(e => failure(p, e))
+  case FromFile(p) -> map_err(File.read_file(p), e => failure(p, e))
   case Invalid(msg) -> Err("mark: #{msg}")
   # `resolve` has already turned this into a file, the help or nothing.
   case Browse(_) -> Ok(cli.help_text())
@@ -48,6 +48,18 @@ fn failure(path: String, e: String) : String =
     "mark: #{path} is a directory with no markdown in it"
   } else {
     "mark: cannot read #{path}: #{e}"
+  }
+
+fn output(
+  opts: cli.Opts,
+  src: cli.Source,
+  text: String
+) : Result[Unit, String] / Stdout + Env + File + Ffi + Stdin + Process + Random =
+  if verbatim(src) {
+    Stdout.print(text)
+    Ok(())
+  } else {
+    map_err(show(opts, src, parser.parse(text)), msg => "mark: #{msg}")
   }
 
 # Text that is already the final output — the help, the version — does
@@ -135,11 +147,14 @@ fn resolve(src: cli.Source) : Option[cli.Source] / File + Ffi + Stdout + Stdin =
 # nothing to render, which is not a failure.
 fn pick(root: String) : Option[cli.Source] / File + Ffi {
   let files = finder.markdown_files(root)
-  if files.is_empty() {
+  if is_empty(files) {
     Some(Invalid("no markdown files under #{root}"))
   } else {
     let rows = pager.body_rows(tty.rows()) + 1
-    finder.run(files, root, rows, tty.columns() - pager.margin()).map(f => FromFile(f))
+    match finder.run(files, root, rows, tty.columns() - pager.margin()) {
+      Ok(chosen) -> chosen | FromFile
+      Err(msg) -> Some(Invalid(msg))
+    }
   }
 }
 
@@ -201,7 +216,7 @@ fn only_images(
   xs: [ast.Inline],
   acc: [([ast.Inline], String)]
 ) : Option[[([ast.Inline], String)]] = match xs {
-  [] -> if acc.is_empty() { None } else { Some(reverse(acc)) }
+  [] -> if is_empty(acc) { None } else { Some(reverse(acc)) }
   [Image(alt, src), ...t] -> only_images(t, [(alt, src), ...acc])
   [ast.Text(s), ...t] -> if is_blank(s) { only_images(t, acc) } else { None }
   _ -> None
@@ -267,7 +282,7 @@ fn tile(
       Placed(cw, ch) -> placed(cw, ch, file_path, buf, temp, id)
       # Not placed, so no width to report: the terminal decides where the
       # drawing lands and how much room it takes.
-      _ -> drawn(proto, file_path, buf, temp).map(seq => (([seq], 0), id))
+      _ -> drawn(proto, file_path, buf, temp) | (seq => (([seq], 0), id))
     }
   }
 
@@ -284,12 +299,11 @@ fn as_png(
       if proto == Iterm or image.format_of(buf) == Png {
         Some((src, buf, false))
       } else {
-        convert.to_png(src).and_then(
-          tmp => match file.read_bytes(tmp) {
+        convert.to_png(src)
+          || (tmp => match file.read_bytes(tmp) {
             Err(_) -> None
             Ok(png) -> Some((tmp, png, true))
-          }
-        )
+          })
       }
   }
 
@@ -332,7 +346,7 @@ fn shares_filesystem() : Bool / Env =
 # kitty opens the path from its own directory, which is not ours, so
 # what it is given has to be absolute. `PWD` is what the shell says.
 fn absolute(p: String) : String / Env =
-  if path.is_absolute(p) { p } else { path.join(env.get("PWD").unwrap_or("."), p) }
+  if path.is_absolute(p) { p } else { path.join(env.get("PWD") ?? ".", p) }
 
 # The paragraph as it was, for the fallback: the images with the single
 # space the source had between them.
@@ -343,7 +357,7 @@ fn alt_of(imgs: [([ast.Inline], String)]) : [ast.Inline] = imgs || .fst
 
 # `fs.dir.list_dir` answers with the entries or with nothing at all, so
 # an empty directory reads as a file here and is caught by the read.
-fn is_directory(path: String) : Bool / File = not dir.list_dir(path).is_empty()
+fn is_directory(path: String) : Bool / File = not is_empty(dir.list_dir(path))
 
 # A placed picture is ordinary text as far as everything downstream is
 # concerned — a block of placeholder cells one column wide each — so it
@@ -362,7 +376,7 @@ fn show(
   opts: cli.Opts,
   src: cli.Source,
   doc: [ast.Block]
-) : Unit / Stdout + Env + File + Ffi + Stdin + Process + Random {
+) : Result[Unit, String] / Stdout + Env + File + Ffi + Stdin + Process + Random {
   let th = theme_for(opts)
   let width = width_for(opts)
   let found =
@@ -378,10 +392,11 @@ fn show(
       with_pictures(proto, doc, FIRST_ID, width, path.dirname(name_of(src)))
     }
   let lines = render.render(th, width, drawn)
-  if pages_with(proto) and paginate(opts, src, lines.length()) {
+  if pages_with(proto) and paginate(opts, src, length(lines)) {
     pager.run(lines, name_of(src))
   } else {
     lines |! (l => Stdout.print(l))
+    Ok(())
   }
 }
 
@@ -404,18 +419,11 @@ fn main() : Int / Stdout + Stderr + Env + File + Stdin + Ffi + Process + Random 
   let opts = cli.parse_args(args.argv())
   match resolve(opts.source) {
     None -> 0
-    Some(src) -> match load(src) {
+    Some(src) -> match load(src) || (text => output(opts, src, text)) {
+      Ok(_) -> 0
       Err(msg) -> {
         Stderr.eprint(msg)
         1
-      }
-      Ok(text) -> {
-        if verbatim(src) {
-          Stdout.print(text)
-        } else {
-          show(opts, src, parser.parse(text))
-        }
-        0
       }
     }
   }

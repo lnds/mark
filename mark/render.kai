@@ -38,7 +38,7 @@ fn blocks(th: theme.Theme, width: Int, bs: [ast.Block], acc: [String]) : [String
     [] -> acc
     [b, ...rest] -> {
       let ls = block(th, width, b)
-      let sep = if acc.is_empty() or ls.is_empty() { [] } else { [""] }
+      let sep = if is_empty(acc) or is_empty(ls) { [] } else { [""] }
       blocks(th, width, rest, reverse(ls) ++ sep ++ acc)
     }
   }
@@ -79,8 +79,8 @@ fn note(th: theme.Theme, width: Int, n: ast.Note) : [String] {
   let marker = "[#{n.number}] "
   indent_first(
     paint_all(th.marker, marker, th.reset),
-    repeat(" ", marker.length()),
-    block_list(th, width - marker.length(), n.blocks)
+    repeat(" ", length(marker)),
+    block_list(th, width - length(marker), n.blocks)
   )
 }
 
@@ -100,7 +100,7 @@ fn table(
 ) : [String] {
   let head_cells = head | (c => styled(th, c, th.strong))
   let body_cells = body | (r => styled_row(th, r))
-  let cols = fit_cols(natural(head_cells, body_cells), width - frame_width(aligns.length()))
+  let cols = fit_cols(natural(head_cells, body_cells), width - frame_width(length(aligns)))
   let bar = (l, mid, r) => paint_all(th.rule, edge(l, mid, r, cols), th.reset)
   [
     bar("┌", "┬", "┐"),
@@ -152,7 +152,7 @@ fn capped(nat: [Int], c: Int) : Int = sum(nat | (w => int.min(w, c)))
 fn row(th: theme.Theme, cells: [[Cell]], cols: [Int], aligns: [ast.Align]) : [String] {
   let wrapped = zip(cells, cols) | (p => wrap_cell(p.fst, p.snd))
   let bar = paint_all(th.rule, "│", th.reset)
-  [0..(max_of(wrapped | .length()) - 1)]
+  [0..(max_of(wrapped | length(.)) - 1)]
     | (i => bar ++ row_line(th, wrapped, cols, aligns, bar, i))
 }
 
@@ -172,7 +172,7 @@ fn chop(l: [Cell], w: Int, acc: [[Cell]]) : [[Cell]] =
     # A cut that took the whole remainder leaves nothing to put on a
     # line of its own: a double-width character in a one-column cell
     # used to add a blank row under itself.
-    if l.is_empty() and (not acc.is_empty()) { reverse(acc) } else { reverse([l, ...acc]) }
+    if is_empty(l) and (not is_empty(acc)) { reverse(acc) } else { reverse([l, ...acc]) }
   } else {
     let n = int.max(fits_in(l, w, 0, 0), 1)
     chop(drop(l, n), w, [take(l, n), ...acc])
@@ -204,7 +204,7 @@ fn row_line(
     ""
   )
 
-fn nth_line(lines: [[Cell]], i: Int) : [Cell] = nth(lines, i).unwrap_or([])
+fn nth_line(lines: [[Cell]], i: Int) : [Cell] = nth(lines, i) ?? []
 
 # The cell painted and then padded out to its column. The padding is
 # never painted: a background colour would run past the text the source
@@ -225,7 +225,7 @@ fn edge(l: String, mid: String, r: String, cols: [Int]) : String =
 fn cells_width(cs: [Cell]) : Int =
   sum(cs | (c => text.char_width(char_to_int(c.ch))))
 
-fn max_of(xs: [Int]) : Int = list.max(xs).unwrap_or(0)
+fn max_of(xs: [Int]) : Int = list.max(xs) ?? 0
 
 # The inner floor is about columns, not legibility: `min_width` governs
 # the width the CLI asks for, but a nested container only needs to be
@@ -336,7 +336,7 @@ fn wrap(cs: [Cell], width: Int, line: Run, word: Run, acc: [[Cell]]) : [[Cell]] 
     [] -> {
       let (done, pending) = place(acc, line, word, width)
       reverse(
-        if pending.cells.is_empty() { done } else { [reverse(pending.cells), ...done] }
+        if is_empty(pending.cells) { done } else { [reverse(pending.cells), ...done] }
       )
     }
     [c, ...t] ->
@@ -357,9 +357,9 @@ fn grow(r: Run, c: Cell) : Run =
   Run { cells: [c, ...r.cells], width: r.width + text.char_width(char_to_int(c.ch)) }
 
 fn place(acc: [[Cell]], line: Run, word: Run, width: Int) : ([[Cell]], Run) =
-  if word.cells.is_empty() {
+  if is_empty(word.cells) {
     (acc, line)
-  } else if line.cells.is_empty() {
+  } else if is_empty(line.cells) {
     (acc, word)
   } else if line.width + 1 + word.width <= width {
     let sep = Cell { ch: ' ', style: joint_style(line.cells, word.cells) }
@@ -376,8 +376,8 @@ fn place(acc: [[Cell]], line: Run, word: Run, width: Int) : ([[Cell]], Run) =
 # Both lists run backwards: the line's last cell is its head, and the
 # word's first cell is its last.
 fn joint_style(line: [Cell], word: [Cell]) : String {
-  let before = head(line).map(.style).unwrap_or("")
-  let after = last(word).map(.style).unwrap_or("")
+  let before = (head(line) | .style) ?? ""
+  let after = (last(word) | .style) ?? ""
   if before == after { before } else { "" }
 }
 
@@ -404,7 +404,7 @@ fn runs(cs: [Cell], cur: String, buf: [Char], out: [String], rst: String) : [Str
 
 # `out` runs backwards, so a run is pushed as (reset, body, style).
 fn emit(style: String, buf: [Char], out: [String], rst: String) : [String] =
-  if buf.is_empty() {
+  if is_empty(buf) {
     out
   } else {
     let body = from_chars(reverse(buf))

@@ -227,7 +227,7 @@ test "every named entity decodes to the character it names" {
     ("pound", "£"),
     ("yen", "¥")
   ]
-  assert named.length() == 29
+  assert length(named) == 29
   assert all(named, p => inline.scan("&#{p.fst};") == [Text(p.snd)])
   # A name the table does not have keeps its ampersand.
   assert inline.scan("&zzz;") == [Text("&zzz;")]
@@ -246,7 +246,7 @@ test "every escapable character survives its backslash" {
   # `escapable` names them; each has to come through as itself.
   let marks =
     ["\\", "`", "*", "_", "[", "]", "(", ")", "#", "+", "-", ".", "!", ">", "<", "~", "&", "|"]
-  assert marks.length() == 18
+  assert length(marks) == 18
   assert all(marks, m => inline.scan("\\#{m}") == [Text(m)])
   # A backslash before anything else stays a backslash.
   assert inline.scan("\\q") == [Text("\\q")]

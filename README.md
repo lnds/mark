@@ -19,7 +19,7 @@ mark -P doc.md | less    # dump, no pager
 
 ## Install
 
-mark is built from source, so you need the kaikai compiler first — **0.121 or
+mark is built from source, so you need the kaikai compiler first — **0.170 or
 later**, which is what the sources are verified against. Either installer
 works; the binary is self-contained and needs no system LLVM:
 

@@ -54,10 +54,10 @@ test "kitty chunks at the protocol's cap, and only the last says it ends" {
       assert char_index_of(seq, "#{esc()}_Ga=T,f=100,m=1;") == Some(0)
       assert char_index_of(seq, "m=0;") != None
       # 4100 base64 characters split 4096 + 4, plus the two envelopes.
-      assert chars(seq).length()
+      assert length(chars(seq))
         == 4100
-          + chars("#{esc()}_Ga=T,f=100,m=1;#{esc()}\\").length()
-          + chars("#{esc()}_Gm=0;#{esc()}\\").length()
+          + length(chars("#{esc()}_Ga=T,f=100,m=1;#{esc()}\\"))
+          + length(chars("#{esc()}_Gm=0;#{esc()}\\"))
     }
   }
 }
@@ -71,7 +71,7 @@ test "the payload survives the encoder untouched" {
       let body = replace(replace(seq, "#{esc()}_Ga=T,f=100,m=1;", ""), "#{esc()}_Gm=0;", "")
       let joined = replace(body, "#{esc()}\\", "")
       assert base64.decode(joined) != None
-      assert chars(joined).length() == 4100
+      assert length(chars(joined)) == 4100
     }
   }
 }
@@ -121,7 +121,7 @@ test "pixels become cells, rounded up so nothing is cut" {
 
 test "the placeholder grid is as wide as it claims to be" {
   let g = image.grid(7, 14, 3)
-  assert g.length() == 3
+  assert length(g) == 3
   # What the pager will measure: 14 columns on every line. `visible_len`
   # is the one that discounts the escape codes; `text.display_width`
   # counts their bytes and would say 30-odd.
@@ -131,17 +131,17 @@ test "the placeholder grid is as wide as it claims to be" {
 test "only the first cell of a line carries its row" {
   let g = image.grid(7, 4, 2)
   # Row 0 takes the first diacritic of kitty's table, row 1 the second.
-  assert char_index_of(nth(g, 0).unwrap_or(""), "\u{0305}") != None
-  assert char_index_of(nth(g, 1).unwrap_or(""), "\u{030D}") != None
+  assert char_index_of(nth(g, 0) ?? "", "\u{0305}") != None
+  assert char_index_of(nth(g, 1) ?? "", "\u{030D}") != None
   # Four cells, one diacritic: the other three inherit the row.
-  assert count(chars(nth(g, 0).unwrap_or("")), c => c == '\u{10eeee}') == 4
-  assert count(chars(nth(g, 0).unwrap_or("")), c => c == '\u{305}') == 1
+  assert count(chars(nth(g, 0) ?? ""), c => c == '\u{10eeee}') == 4
+  assert count(chars(nth(g, 0) ?? ""), c => c == '\u{305}') == 1
 }
 
 test "the image id rides in the foreground colour" {
   let g = image.grid(4100, 2, 1)
   # 4100 is 0x001004: no red, 0x10 green, 0x04 blue.
-  assert char_index_of(nth(g, 0).unwrap_or(""), "[38;2;0;16;4m") != None
+  assert char_index_of(nth(g, 0) ?? "", "[38;2;0;16;4m") != None
 }
 
 test "a placed image draws through its placeholders, not a sequence" {
@@ -258,11 +258,11 @@ test "the diacritics table is kitty's, entry for entry" {
   # value breaks: its length, its order, its ends, and its sum — the
   # last being the only one a swapped digit cannot survive.
   let ds = image.diacritics()
-  assert ds.length() == 297
+  assert length(ds) == 297
   assert image.max_rows() == 297
   assert sum(ds) == 4545336
   # Protocol order, which is also ascending: no duplicate can hide in it.
-  assert all(enumerate(drop(ds, 1)), p => p.snd > nth(ds, p.fst).unwrap_or(0))
+  assert all(enumerate(drop(ds, 1)), p => p.snd > (nth(ds, p.fst) ?? 0))
   assert head(ds) == Some(0x0305)
   assert last(ds) == Some(0x1D244)
 }

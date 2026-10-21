@@ -72,4 +72,4 @@ fn run(cmd: String, args: [String]) : Bool / Process = match proc.pipe_errs(cmd,
   }
 }
 
-fn temp_dir() : String / Env = env.get("TMPDIR").unwrap_or("/tmp")
+fn temp_dir() : String / Env = env.get("TMPDIR") ?? "/tmp"

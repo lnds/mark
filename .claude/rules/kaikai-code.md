@@ -45,7 +45,7 @@ Tick}`.
 **The `core/*` modules are auto-loaded** — `core/list`, `core/string`, `core/char`,
 `core/option`, `core/result`, `core/tuple`, plus `protocols`, `effects` and `array` (the
 full set is in `kai info builtins`). Importing them is noise: write `reverse(xs)`,
-`trim(s)`, `xs.length()`. Their module names stay in scope too, so `list.repeat("", n)`
+`trim(s)`, `length(xs)`. Their module names stay in scope too, so `list.repeat("", n)`
 disambiguates a name both modules own. Only what is outside that set is imported: here
 `text`, `math/int`, `path`, `encoding/*`, `fs/*`, `os/*` and `terevaka.*`.
 
@@ -95,8 +95,17 @@ Every one cost a compile cycle; do not repeat them.
   `list.repeat("", n)`. A module you import shadows a core name the same way, but only in
   the file that writes the import — `main.kai` imports `path` and so spells out
   `string.join`, while the other files need not.
-- **A continuation line may not begin with `.`.** Binary operators continue an expression
-  across lines; a UFCS chain does not. Break it inside its parentheses.
+- **There are no methods.** Since 0.170 `xs.length()` is an error, not a call. The plain
+  call is `length(xs)`; on an `Option` the default is `o ?? d`, not `unwrap_or`; `opt | f`
+  maps and `r || g` chains, not `map` and `and_then`; `map_err(r, f)` has no pipe form.
+- **`??` binds tighter than the pipes.** `opt | f ?? d` reads `opt | (f ?? d)`; write
+  `(opt | f) ?? d`. It also binds tighter than `==`, so `(o ?? "") == "x"` keeps its
+  parentheses only for the reader.
+- **`length` alone in a pipe is ambiguous** between `list` and `string`. Write the section
+  `xs | length(.)` and let the element type decide.
+- **A `.kai-cache` left by an older compiler can lie.** After the move to 0.170, `kai test
+  .` reported `cli_test`'s twelve tests for every file under `tests/`; `kai clean` ended it.
+  When a suite's counts look copied, clean before believing them.
 - **`_` is not a lambda parameter.** `(i, _) => ...` is `expected `,` or `)` in call
   arguments`; name the one you ignore.
 - **`list.map_indexed` is not tail-recursive.** It overflows the fiber stack on a few

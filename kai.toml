@@ -3,4 +3,4 @@ version = "0.10.3"
 entry = "main.kai"
 
 [dependencies]
-terevaka = { source = "github.com/kaikailang-org/terevaka", ref = "v0.3.0" }
+terevaka = { source = "github.com/kaikailang-org/terevaka", ref = "v0.4.2" }

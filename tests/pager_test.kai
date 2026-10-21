@@ -51,7 +51,7 @@ test "the frame leaves room for the frame margin" {
   assert pager.body_rows(3) == 1
   assert pager.body_rows(1) == 1
   let m = pager.model(doc(100), pager.body_rows(30) + 1, "x.md")
-  assert pager.viewport(m).length() == 28
+  assert length(pager.viewport(m)) == 28
   assert ui.visible_len(pager.status(m, 100 - pager.margin())) == 97
 }
 
