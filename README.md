@@ -1,5 +1,7 @@
 # mark
 
+[![km score](.github/km-score.svg)](https://kimun.tools)
+
 A markdown viewer for the terminal, in the spirit of
 [glow](https://github.com/charmbracelet/glow), written in
 [kaikai](https://kaikai-lang.org).

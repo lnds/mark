@@ -1,0 +1,31 @@
+# Grades the code health with Kimün on every push to main and commits
+# the badge the README shows, only when the score moved. A push made
+# with the workflow's own token does not start another run.
+name: km score
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: km-score
+  cancel-in-progress: true
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lnds/kimun-action@v1
+      - name: Commit the badge if the score moved
+        run: |
+          cp km-badge/km-score.svg .github/km-score.svg
+          git add .github/km-score.svg
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: km score badge"
+          git push
